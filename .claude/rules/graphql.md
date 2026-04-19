@@ -1,0 +1,162 @@
+---
+paths: ["**/*.graphqls", "cli/internal/graph/**", "frontend/src/lib/graphql/**"]
+---
+
+# GraphQL Development
+
+gqlgen is schema-first. Follow this workflow for GraphQL changes:
+
+1. Update schema files (`*.graphqls`) first
+2. Run `mise codegen-cli` to regenerate Go types/resolvers
+3. After frontend query changes, run `mise codegen-frontend`
+
+## Schema Documentation
+
+- Every type must have a type-level description
+- Every field must have a description, even "obvious" relationship fields
+- Every enum value must have a description explaining its meaning
+- Descriptions should be concise (one sentence preferred)
+- Include format examples for non-obvious string values (e.g., `"Round-trip time (e.g., '1.234ms')."`)
+
+## Schema Directives
+
+Use gqlgen directives to control code generation:
+
+### `@goField(forceResolver: true)`
+
+Add this to fields that have custom resolvers. This:
+
+- Silences "adding resolver method for X, nothing matched" warnings
+- Documents that the field requires a resolver (not auto-bound from protobuf)
+- Required for fields that are computed, lazy-loaded, or need authorization
+
+```graphql
+type Space {
+  id: ID! # Auto-bound from protobuf
+  rooms: [Room!]! @goField(forceResolver: true) # Requires resolver
+  viewerIsMember: Boolean! @goField(forceResolver: true) # Computed field
+}
+```
+
+### `@goModel(model: "...")`
+
+Bind a GraphQL type to a specific Go type:
+
+```graphql
+scalar Time @goModel(model: "hmans.de/chatto/internal/graph.Time")
+```
+
+## Unions vs Interfaces
+
+**Prefer unions over interfaces** for polymorphic types. This project uses unions (like `EventType`, `NotificationItem`) rather than interfaces:
+
+- **Union**: Simpler Go models - only need `IsTypeName()` marker method
+- **Interface**: Requires getter methods for all shared fields in Go
+
+With unions, clients check `__typename` and use inline fragments to query fields:
+
+```graphql
+# Union requires inline fragments for ALL fields (including shared ones)
+query {
+  notifications {
+    __typename
+    ... on DMMessageNotificationItem {
+      id
+      createdAt
+      actor {
+        id
+      }
+      summary
+      room {
+        id
+      }
+    }
+    ... on MentionNotificationItem {
+      id
+      createdAt
+      actor {
+        id
+      }
+      summary
+      space {
+        id
+      }
+      room {
+        id
+      }
+    }
+  }
+}
+```
+
+## Custom Model Files
+
+When gqlgen's auto-binding doesn't work (e.g., types needing internal fields for resolvers), create custom models in `cli/internal/graph/model/`. Keep these minimal:
+
+```go
+type MyCustomType struct {
+    ID      string `json:"id"`
+    // Internal fields for resolvers (not exposed in GraphQL)
+    ActorID string `json:"-"`
+}
+
+func (MyCustomType) IsMyUnion() {}  // Union marker method
+```
+
+## Type Compatibility
+
+When autobind can't match protobuf types to GraphQL types, you'll see warnings like:
+
+- `Time is incompatible with *timestamppb.Timestamp` → Use custom scalar with `@goModel`
+- `ID is incompatible with uint64` → Add resolver to convert types
+- `adding resolver method for X, nothing matched` → Add `@goField(forceResolver: true)`
+
+## Optimistic UI vs Backend Enforcement
+
+For permission-based UI gating (e.g., "can viewer manage this user?"):
+
+- **Frontend handles optimistic checks** using locally available data (role positions, membership status)
+- **Backend enforces authorization** on mutations - the actual security boundary
+
+Don't add `viewer*` boolean fields that require backend round-trips when the frontend already has the data to compute them. Instead:
+
+| ❌ Avoid                                 | ✅ Prefer                              |
+| ---------------------------------------- | -------------------------------------- |
+| `SpaceMember.viewerCanManage: Boolean!`  | Frontend computes using role positions |
+| Fetching permissions for every list item | Query permissions once, apply locally  |
+
+Backend `viewer*` fields are still useful for:
+
+- Complex authorization logic the frontend can't replicate
+- Fallback when local data isn't available
+- API-level authorization (e.g., `Space.viewerCanManageUser(userId)` for mutations)
+
+## Prefer Core Types Over Wrapper Types
+
+Avoid creating wrapper types that just add fields to existing types. Instead, add scoped fields to the core type:
+
+| ❌ Avoid                                         | ✅ Prefer                                         |
+| ------------------------------------------------ | ------------------------------------------------- |
+| `SpaceMember { user: User!, roles: [String!]! }` | `User.spaceRoles(spaceId: ID!): [String!]!`       |
+| `Space.members: [SpaceMember!]!`                 | `Space.members: [User!]!` with `spaceRoles` field |
+
+Benefits:
+
+- Simpler schema with fewer types
+- Consistent data shape - a User is always a User
+- Easier caching and normalization in clients
+- Fields can be queried in any context where the User is available
+
+## Fragment Type Assertions
+
+When using gql.tada/graphql-codegen with fragments, the generated TypeScript types use `$fragmentRefs` markers that don't expose fields like `id` directly. The fields exist at runtime, but TypeScript requires assertions:
+
+```typescript
+// TypeScript error: Property 'id' does not exist on type '{ __typename?: "User" } & { $fragmentRefs?: ... }'
+const actorId = participant.id;
+
+// Works - field exists at runtime, assertion satisfies TypeScript
+const actorId = (participant as { id?: string })?.id;
+```
+
+This commonly occurs when working with fragment wrapper types from subscriptions or when comparing actors/participants by ID.
