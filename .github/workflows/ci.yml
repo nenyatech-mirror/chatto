@@ -147,7 +147,10 @@ jobs:
           version: "~> v2"
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use a PAT so the release is authored by a user account rather
+          # than github-actions[bot]. Bot-authored releases don't get
+          # GitHub's autolink rendering for commit SHAs and #NNN PR refs.
+          GITHUB_TOKEN: ${{ secrets.GORELEASER_GITHUB_TOKEN }}
 
       - name: Extract version from tag
         id: version
