@@ -11,3 +11,7 @@
 !frontend/tsconfig.json
 !frontend/vite.config.ts
 !frontend/nginx.conf
+
+# Backend dev image (Dockerfile.dev) needs the cli/ tree.
+!cli/
+cli/data/
