@@ -1,5 +1,5 @@
 {
     "scripts": {
-        "run": "echo \"Starting on https://$CONDUCTOR_WORKSPACE_NAME.orb.local/\" && trap 'docker compose down' EXIT INT TERM && docker compose up"
+        "run": "docker compose up"
     }
 }
