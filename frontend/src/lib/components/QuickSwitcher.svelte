@@ -15,12 +15,11 @@
   import SkeletonImg from '$lib/ui/SkeletonImg.svelte';
   import { getGradientForName } from '$lib/utils/gradients';
   import { recentQuickSwitcher } from '$lib/state/recentQuickSwitcher.svelte';
-  import { startDMWith } from '$lib/dm/startDM';
 
   type SpaceLogo = { name: string; logoUrl?: string | null };
 
   type ResultItem = {
-    kind: 'space' | 'room' | 'dm' | 'user' | 'destination';
+    kind: 'space' | 'room' | 'dm' | 'destination';
     id: string;
     label: string;
     detail: string;
@@ -40,20 +39,8 @@
   let selectedIndex = $state(0);
   let loading = $state(false);
   let allItems = $state.raw<ResultItem[]>([]);
-  let userSearchItems = $state.raw<ResultItem[]>([]);
   let dialogEl: HTMLDialogElement | undefined = $state();
   let inputEl: HTMLInputElement | undefined = $state();
-
-  // Per-instance context needed for user search (populated during loadAll)
-  type InstanceContext = {
-    instanceId: string;
-    instanceLabel: string;
-    instanceName: string;
-    spaceIds: string[];
-    currentUserId: string | undefined;
-    dmUserIds: Set<string>;
-  };
-  let instanceContexts: InstanceContext[] = [];
 
   // --- GraphQL queries ---
 
@@ -100,18 +87,6 @@
     }
   `);
 
-  const SpaceMembersSearchQuery = graphql(`
-    query QuickSwitcherSpaceMembersSearch($spaceId: ID!, $search: String!, $limit: Int!) {
-      space(id: $spaceId) {
-        members(search: $search, limit: $limit) {
-          users {
-            ...UserAvatarUser
-          }
-        }
-      }
-    }
-  `);
-
   // --- Data loading ---
 
   async function loadAll() {
@@ -119,7 +94,6 @@
     const instances = instanceRegistry.instances;
     const multiInstance = instances.length > 1;
     const items: ResultItem[] = [];
-    const contexts: InstanceContext[] = [];
     const opts = { requestPolicy: 'network-only' as const };
     let anyCanListSpaces = false;
 
@@ -163,9 +137,7 @@
           }
         }
 
-        // DMs — track which user IDs already have a DM conversation
-        // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local dedup set, not read reactively
-        const dmUserIds = new Set<string>();
+        // DMs
         const currentUserId = dmsResult?.data?.me?.id ?? undefined;
 
         if (dmsResult?.data?.space) {
@@ -175,9 +147,6 @@
             );
             const others = participants.filter((p) => p.id !== currentUserId);
             const isSelf = others.length === 0;
-
-            // Track user IDs that already have DM conversations
-            for (const p of others) dmUserIds.add(p.id);
 
             let label: string;
             if (isSelf) {
@@ -202,16 +171,6 @@
             });
           }
         }
-
-        // Save context for later user searches
-        contexts.push({
-          instanceId: instance.id,
-          instanceLabel,
-          instanceName,
-          spaceIds: spaces.map((s) => s.id),
-          currentUserId,
-          dmUserIds
-        });
 
         // Fetch rooms for all spaces in parallel
         await Promise.allSettled(
@@ -285,82 +244,9 @@
       score: 0
     });
 
-    instanceContexts = contexts;
     allItems = items;
     loading = false;
   }
-
-  // --- Server-side user search (debounced) ---
-
-  let searchTimer: ReturnType<typeof setTimeout> | undefined;
-  let searchGeneration = 0;
-
-  function scheduleUserSearch(q: string) {
-    clearTimeout(searchTimer);
-    if (!q) {
-      userSearchItems = [];
-      return;
-    }
-    searchTimer = setTimeout(() => searchUsers(q), 200);
-  }
-
-  async function searchUsers(q: string) {
-    const gen = ++searchGeneration;
-    const opts = { requestPolicy: 'network-only' as const };
-    const results: ResultItem[] = [];
-    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local dedup set, not read reactively
-    const seenUserIds = new Set<string>();
-
-    await Promise.allSettled(
-      instanceContexts.map(async (ctx) => {
-        const client = graphqlClientManager.getClient(ctx.instanceId).client;
-
-        // Search all spaces this user belongs to in parallel
-        await Promise.allSettled(
-          ctx.spaceIds.map(async (spaceId) => {
-            const result = await client
-              .query(SpaceMembersSearchQuery, { spaceId, search: q, limit: 10 }, opts)
-              .toPromise();
-
-            const users = result?.data?.space?.members?.users;
-            if (!users) return;
-
-            for (const rawUser of users) {
-              const user = useFragment(UserAvatarUserFragmentDoc, rawUser);
-              if (user.id === ctx.currentUserId) continue;
-              if (ctx.dmUserIds.has(user.id)) continue;
-              const key = `${ctx.instanceId}:${user.id}`;
-              if (seenUserIds.has(key)) continue;
-              seenUserIds.add(key);
-
-              results.push({
-                kind: 'user',
-                id: user.id,
-                label: user.displayName || user.login,
-                detail: ctx.instanceLabel,
-                instanceId: ctx.instanceId,
-                instanceName: ctx.instanceName,
-                participants: [user],
-                currentUserId: ctx.currentUserId,
-                score: 0
-              });
-            }
-          })
-        );
-      })
-    );
-
-    // Only apply if this is still the latest search
-    if (gen === searchGeneration) {
-      userSearchItems = results;
-    }
-  }
-
-  // Trigger user search when query changes
-  $effect(() => {
-    const q = query.trim();
-    scheduleUserSearch(q);
-  });
 
   function getHostname(url: string): string {
     try {
@@ -399,7 +285,7 @@
       });
 
       // Sort rest by kind then alphabetically
-      const kindOrder: Record<ResultItem['kind'], number> = { destination: 0, space: 1, room: 2, dm: 3, user: 4 };
+      const kindOrder: Record<ResultItem['kind'], number> = { destination: 0, space: 1, room: 2, dm: 3 };
       rest.sort(
         (a, b) => kindOrder[a.kind] - kindOrder[b.kind] || a.label.localeCompare(b.label)
       );
@@ -435,13 +321,6 @@
 
     scored.sort((a, b) => b.score - a.score);
 
-    // Append server-side user search results (already filtered, no duplicates with DMs)
-    if (!isChannelFilter && userSearchItems.length > 0) {
-      for (const user of userSearchItems) {
-        scored.push(user);
-      }
-    }
-
     return scored;
   });
 
@@ -461,7 +340,6 @@
       query = '';
       selectedIndex = 0;
       allItems = [];
-      userSearchItems = [];
       dialogEl?.showModal();
       requestAnimationFrame(() => inputEl?.focus());
       loadAll();
@@ -482,11 +360,6 @@
 
   function select(item: ResultItem) {
     visible = false;
-
-    if (item.kind === 'user') {
-      startDMWith(item.instanceId, item.id);
-      return;
-    }
 
     const url = itemUrl(item);
     if (url) {
@@ -531,8 +404,7 @@
     destination: 'Go to',
     space: 'Space',
     room: 'Room',
-    dm: 'DM',
-    user: 'User'
+    dm: 'DM'
   };
 
   function isRecent(item: ResultItem): boolean {
@@ -590,7 +462,7 @@
           bind:value={query}
           onkeydown={handleKeydown}
           type="text"
-          placeholder="Go to space, room, conversation, or user..."
+          placeholder="Go to space, room, or conversation..."
           class="flex-1 bg-transparent text-text outline-none placeholder:text-muted"
         />
         {#if loading}
@@ -627,7 +499,7 @@
             >
               {#if item.kind === 'destination' && item.icon}
                 <span class="sidebar-icon iconify text-muted {item.icon}"></span>
-              {:else if (item.kind === 'dm' || item.kind === 'user') && item.participants}
+              {:else if item.kind === 'dm' && item.participants}
                 <span class="sidebar-icon">
                   <div class="flex -space-x-2">
                     {#each dmAvatarParticipants(item) as participant (participant.id)}
