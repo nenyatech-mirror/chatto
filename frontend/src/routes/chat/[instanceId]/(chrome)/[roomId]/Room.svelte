@@ -93,7 +93,7 @@
   // back here in an infinite loop.
   $effect.pre(() => {
     if (room.roomData === null) {
-      clearLastRoom(getInstanceId(), spaceId);
+      clearLastRoom(getInstanceId());
       goto(resolve('/chat/[instanceId]', { instanceId: instanceSegment }), { replaceState: true });
     }
   });
@@ -141,10 +141,14 @@
     }
   });
 
-  // Remember this room as the last visited for this space
+  // Remember this room as the last visited (for the chat-root → last-room
+  // auto-redirect). DM rooms are deliberately excluded: their lifecycle is
+  // user-driven (start a conversation, post a message), not "the room I was
+  // last in," and auto-landing on a DM after returning to the instance is
+  // surprising — channels are the implicit destination.
   $effect(() => {
-    if (room.roomData) {
-      setLastRoom(getInstanceId(), spaceId, roomId);
+    if (room.roomData && !room.isDM) {
+      setLastRoom(getInstanceId(), roomId);
     }
   });
 
