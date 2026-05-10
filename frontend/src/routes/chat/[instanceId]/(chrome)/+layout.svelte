@@ -11,6 +11,7 @@
   import { useActiveInstanceEvent, useReconnectCallback } from '$lib/hooks';
   import SecondarySidebar from '$lib/components/SecondarySidebar.svelte';
   import { createSpacePermissions } from '$lib/state/space';
+  import { getInstancePermissions } from '$lib/state/instance/permissions.svelte';
   import RoomList from '$lib/RoomList.svelte';
   import SpaceHeader from './SpaceHeader.svelte';
   import SpaceBanner from './SpaceBanner.svelte';
@@ -91,7 +92,7 @@
               primarySpaceId
               config {
                 instanceName
-                bannerUrl(width: 512, height: 384)
+                bannerUrl(width: 480, height: 252)
               }
               viewerHasAnyAdminPermission
               viewerCanManageInstance
@@ -241,8 +242,14 @@
     }
   });
 
-  // Whether the user can access ANY space settings feature (use the new hasAnyAdminPermission)
-  const canAccessAnySettings = $derived(spaceData?.hasAnyAdminPermission);
+  // Read instance permissions for admin-flavoured nav items (system, runtime).
+  const instancePerms = getInstancePermissions();
+
+  // Whether the user can access ANY admin/settings feature (used to decide
+  // whether to show the gear cog in the SpaceHeader).
+  const canAccessAnySettings = $derived(
+    !!spaceData?.hasAnyAdminPermission || instancePerms.current.canViewAdmin
+  );
 
   // Admin navigation items - filtered based on permissions
   const adminNavItems = $derived.by(() => {
@@ -267,7 +274,7 @@
       });
     }
 
-    if (spaceData.canAssignRoles) {
+    if (spaceData.canAssignRoles || instancePerms.current.canAdminViewUsers) {
       items.push({
         href: resolve('/chat/[instanceId]/(chrome)/server-admin/members', { instanceId: instanceSegment }),
         label: 'Members',
@@ -283,7 +290,7 @@
       });
     }
 
-    if (spaceData.canManageRoles) {
+    if (spaceData.canManageRoles || instancePerms.current.canAdminViewRoles) {
       items.push({
         href: resolve('/chat/[instanceId]/(chrome)/server-admin/roles', { instanceId: instanceSegment }),
         label: 'Roles',
@@ -293,6 +300,22 @@
         href: resolve('/chat/[instanceId]/(chrome)/server-admin/inspector', { instanceId: instanceSegment }),
         label: 'Inspector',
         icon: 'iconify uil--search'
+      });
+    }
+
+    if (instancePerms.current.canViewAdmin) {
+      items.push({
+        href: resolve('/chat/[instanceId]/(chrome)/server-admin/security', { instanceId: instanceSegment }),
+        label: 'Security',
+        icon: 'iconify uil--shield-exclamation'
+      });
+    }
+
+    if (instancePerms.current.canAdminViewSystem) {
+      items.push({
+        href: resolve('/chat/[instanceId]/(chrome)/server-admin/system', { instanceId: instanceSegment }),
+        label: 'System',
+        icon: 'iconify uil--server'
       });
     }
 
@@ -358,7 +381,7 @@
               title={spaceName ?? 'Space'}
               items={adminNavItems}
               backHref={resolve('/chat/[instanceId]', { instanceId: instanceSegment })}
-              backLabel="Back to Space"
+              backLabel="Back to Server"
               isActive={isAdminNavActive}
             />
           {:else}

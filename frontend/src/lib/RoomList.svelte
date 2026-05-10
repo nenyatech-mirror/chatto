@@ -22,8 +22,7 @@ rooms are organized into collapsible sections. Otherwise, rooms display alphabet
     useTabResumeCallback,
     useInstanceEvent,
     useMention,
-    useRoomMarkedAsRead,
-    useRoomLayoutUpdated
+    useRoomMarkedAsRead
   } from '$lib/hooks';
   import { getCurrentUser } from '$lib/auth/currentUser.svelte';
   import { instanceStorageKey } from '$lib/storage/instanceStorage';
@@ -252,11 +251,6 @@ rooms are organized into collapsible sections. Otherwise, rooms display alphabet
     }
   });
 
-  // Room layout updates from other users/tabs
-  useRoomLayoutUpdated(() => {
-    void roomsStore.refresh();
-  });
-
   function toAvatarUser(p: CallRoomParticipant) {
     return {
       id: p.userId,
@@ -470,8 +464,13 @@ rooms are organized into collapsible sections. Otherwise, rooms display alphabet
     {#if unsectionedRooms.length > 0}
       {@render collapsibleGroup('__unsorted__', 'Other', unsectionedRooms, roomLink)}
     {/if}
+  {:else if unsectionedRooms.length > 0}
+    <!-- Layout exists but defines no sections — render in the admin's saved
+         order (unsectionedRoomIds), falling back to alphabetical for any new
+         rooms added since the layout was last edited. -->
+    {@render collapsibleGroup('__rooms__', 'Rooms', unsectionedRooms, roomLink, 'mt-4 first:mt-0')}
   {:else if sortedRooms.length > 0}
-    <!-- No layout configured — single collapsible "Rooms" group -->
+    <!-- No layout configured at all — alphabetical fallback. -->
     {@render collapsibleGroup('__rooms__', 'Rooms', sortedRooms, roomLink, 'mt-4 first:mt-0')}
   {/if}
 

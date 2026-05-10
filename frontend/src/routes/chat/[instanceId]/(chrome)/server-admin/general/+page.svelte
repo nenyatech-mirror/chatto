@@ -6,7 +6,7 @@
 
 <PageTitle title="General | Server Admin" />
 
-<PaneHeader title="General" subtitle="Instance name, description, and branding" showMobileNav />
+<PaneHeader title="General" subtitle="Server identity, branding, and messages" showMobileNav />
 
 <div class="flex flex-col gap-6 overflow-y-auto p-6">
   <InstanceSettings />

@@ -35,7 +35,7 @@ export class SpaceAdminPage {
     return this.page.locator('nav a', { hasText: 'Roles' });
   }
 
-  /** Sidebar navigation item for Members settings */
+  /** Sidebar navigation item for the Members settings page. */
   get membersNavItem(): Locator {
     return this.page.locator('nav a', { hasText: 'Members' });
   }
@@ -131,16 +131,16 @@ export class SpaceAdminPage {
     return this.page.getByRole('heading', { name: 'Banner', exact: true });
   }
 
-  /** The Admin home page heading (in main content, not sidebar) */
+  /** The admin home page heading (in main content, not sidebar). Was:
+   * "Space Admin"; post-merge the unified server-admin landing page reads
+   * "Dashboard". */
   get pageHeading(): Locator {
-    // The main content h1 is the second one - first is in the sidebar
-    // Use getByRole for reliability, then pick the last one (main content comes after sidebar in DOM)
-    return this.page.getByRole('heading', { name: 'Space Admin', level: 1 }).last();
+    return this.page.getByRole('heading', { name: 'Dashboard', level: 1 }).last();
   }
 
-  /** The sidebar heading showing "Space Admin" */
+  /** The sidebar heading showing the server name in admin mode. */
   get sidebarHeading(): Locator {
-    return this.page.getByRole('heading', { name: 'Space Admin' });
+    return this.page.getByRole('heading', { level: 1 }).first();
   }
 
   // --- Navigation ---
