@@ -581,8 +581,8 @@ func (c *ChattoCore) PublishVideoProcessingRequest(ctx context.Context, spaceID,
 // PublishVideoProcessingCompleted publishes a live event indicating video processing is done.
 // The frontend subscription receives this and refreshes the affected message.
 func (c *ChattoCore) PublishVideoProcessingCompleted(ctx context.Context, spaceID, roomID, attachmentID, messageBodyID string) error {
-	event := newSpaceEvent("", &corev1.SpaceEvent{
-		Event: &corev1.SpaceEvent_VideoProcessingCompleted{
+	event := newServerEvent("", &corev1.ServerEvent{
+		Event: &corev1.ServerEvent_VideoProcessingCompleted{
 			VideoProcessingCompleted: &corev1.VideoProcessingCompletedEvent{
 				SpaceId:        spaceID,
 				RoomId:         roomID,
@@ -594,7 +594,7 @@ func (c *ChattoCore) PublishVideoProcessingCompleted(ctx context.Context, spaceI
 	})
 
 	subject := subjects.LiveRoomEvent(kindForSpace(spaceID), roomID, "video_processed")
-	return c.publishLiveSpaceEvent(ctx, subject, event)
+	return c.publishLiveServerEvent(ctx, subject, event)
 }
 
 // DeleteAttachmentFromStorageByID deletes an attachment from storage by space ID and attachment ID.

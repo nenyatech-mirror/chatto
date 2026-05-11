@@ -52,25 +52,10 @@ func (c *ChattoCore) ResolveMentions(ctx context.Context, spaceID string, userna
 
 	var userIDs []string
 	for _, username := range usernames {
-		// Look up user by login (case-insensitive)
+		// Look up user by login (case-insensitive). Every authenticated user
+		// is implicitly a server member post-#330, so no further gate.
 		user, err := c.GetUserByLogin(ctx, username)
 		if err != nil {
-			// User not found - silently ignore invalid mentions
-			continue
-		}
-
-		// Verify user is a member of this space
-		membership, err := c.GetSpaceMembership(ctx, user.Id, spaceID)
-		if err != nil {
-			c.logger.Debug("Failed to check space membership for mention",
-				"username", username,
-				"user_id", user.Id,
-				"space_id", spaceID,
-				"error", err)
-			continue
-		}
-		if membership == nil {
-			// User exists but is not a member of this space - skip
 			continue
 		}
 
@@ -114,11 +99,11 @@ func (c *ChattoCore) notifyMentionedUsers(ctx context.Context, spaceID, roomID, 
 
 		// Publish live mention event for room-level indicator real-time update
 		// (Space/room/user names are resolved by GraphQL resolvers)
-		mentionEvent := &corev1.InstanceEvent{
+		mentionEvent := &corev1.LiveEvent{
 			Id:        NewEventID(),
 			ActorId:   authorID,
 			CreatedAt: timestamppb.Now(),
-			Event: &corev1.InstanceEvent_MentionNotification{
+			Event: &corev1.LiveEvent_MentionNotification{
 				MentionNotification: &corev1.MentionNotificationEvent{
 					SpaceId:           spaceID,
 					RoomId:            roomID,
@@ -127,7 +112,7 @@ func (c *ChattoCore) notifyMentionedUsers(ctx context.Context, spaceID, roomID, 
 			},
 		}
 		subject := subjects.LiveInstanceUserEvent(mentionedUserID, "mentioned")
-		if err := c.publishInstanceEvent(ctx, subject, mentionEvent); err != nil {
+		if err := c.publishLiveEvent(ctx, subject, mentionEvent); err != nil {
 			c.logger.Warn("Failed to publish mention live event",
 				"mentioned_user_id", mentionedUserID,
 				"error", err)
