@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"slices"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -15,16 +14,23 @@ import (
 )
 
 // Position constants for role hierarchy.
-// Lower position = higher rank (more power).
-//
-// WARNING: Do not perform arithmetic on PositionEveryone
-// as it uses MaxInt32 to ensure it's always the lowest rank.
-// Adding to PositionEveryone would cause integer overflow.
+// Higher position = higher rank (more power).
 const (
-	PositionOwner     int32 = 0             // Owner is highest rank
-	PositionAdmin     int32 = 1             // Admin is second-highest (instance only)
-	PositionModerator int32 = 2             // Moderator (instance: 2, space: 1)
-	PositionEveryone  int32 = math.MaxInt32 // Everyone is always the lowest rank
+	// Position numbering: higher = more power.
+	//   everyone   = 0     (always; the implicit role every user holds)
+	//   custom     = 1..99 (operator-defined roles slot in here)
+	//   moderator  = 100
+	//   admin      = 900
+	//   owner      = 1000
+	//
+	// Wide gaps between system roles leave room for new system roles in the
+	// future and let custom roles be positioned at any rank without
+	// renumbering existing ones.
+	PositionEveryone    int32 = 0
+	PositionCustomFirst int32 = 1
+	PositionModerator   int32 = 100
+	PositionAdmin       int32 = 900
+	PositionOwner       int32 = 1000
 )
 
 // Engine provides generic RBAC operations against a KV bucket.
@@ -806,27 +812,40 @@ func (e *Engine) RoleHasPermissionDenial(ctx context.Context, roleName, verb, ob
 // Role Hierarchy Operations
 // ============================================================================
 
-// GetNextAvailablePosition returns the next available position for a new custom role.
-// It finds the highest position among non-everyone roles and adds 1.
-// Returns 1 if no custom roles exist (admin is at 0).
+// GetNextAvailablePosition returns the next position for a new custom role.
+// Custom roles occupy positions strictly above everyone (0) and below the
+// system roles (moderator=100, admin=900, owner=1000). The returned value is
+// one greater than the highest existing custom-role position, floored at
+// PositionCustomFirst so a fresh server gets 1, and skips any system-role
+// position so we never collide.
 func (e *Engine) GetNextAvailablePosition(ctx context.Context) (int32, error) {
 	roles, err := e.ListRoles(ctx)
 	if err != nil {
-		return 1, err
+		return PositionCustomFirst, err
 	}
 
-	var maxPos int32 = 0
+	maxCustom := PositionEveryone
 	for _, role := range roles {
-		// Skip virtual roles (they're always at fixed max positions)
-		if role.Position == PositionEveryone {
+		if e.isSystemRole(role.Name) {
 			continue
 		}
-		if role.Position > maxPos {
-			maxPos = role.Position
+		if role.Position > maxCustom {
+			maxCustom = role.Position
 		}
 	}
 
-	return maxPos + 1, nil
+	next := maxCustom + 1
+	for isSystemPosition(next) {
+		next++
+	}
+	return next, nil
+}
+
+// isSystemPosition reports whether a position number is reserved for one of
+// the seeded system roles (moderator / admin / owner). Custom-role assignment
+// helpers skip these so positions stay collision-free.
+func isSystemPosition(p int32) bool {
+	return p == PositionModerator || p == PositionAdmin || p == PositionOwner
 }
 
 // UpdateRolePosition updates only the position of a role.
@@ -859,27 +878,32 @@ func (e *Engine) UpdateRolePosition(ctx context.Context, name string, position i
 }
 
 // ReorderRoles sets positions for custom roles based on the provided order.
-// System roles maintain fixed positions and are skipped.
-// Positions are assigned starting from a configured base position.
-// Returns all roles sorted by position.
+// System roles (moderator=100, admin=900, owner=1000) maintain fixed positions
+// and are not accepted by this call. Custom roles are assigned positions
+// starting at PositionCustomFirst (1) and incrementing, skipping any
+// system-role position so we never collide.
+//
+// The provided order goes from least to most powerful, matching the rest of
+// the engine's position-ascending-is-more-power convention.
 func (e *Engine) ReorderRoles(ctx context.Context, orderedNames []string) ([]*corev1.Role, error) {
-	// Validate that all provided names are custom roles (not system roles)
 	for _, name := range orderedNames {
 		if e.isSystemRole(name) {
 			return nil, fmt.Errorf("cannot reorder system role: %s", name)
 		}
-		// Verify role exists
 		if _, err := e.GetRole(ctx, name); err != nil {
 			return nil, fmt.Errorf("role %s: %w", name, err)
 		}
 	}
 
-	// Assign positions based on order (starting from 1, since admin is 0)
-	for i, name := range orderedNames {
-		position := int32(i + 1) // 1, 2, 3, ...
+	position := PositionCustomFirst
+	for _, name := range orderedNames {
+		for isSystemPosition(position) {
+			position++
+		}
 		if _, err := e.UpdateRolePosition(ctx, name, position); err != nil {
 			return nil, fmt.Errorf("failed to update position for %s: %w", name, err)
 		}
+		position++
 	}
 
 	e.log().Info("Reordered roles", "order", orderedNames)
@@ -888,9 +912,17 @@ func (e *Engine) ReorderRoles(ctx context.Context, orderedNames []string) ([]*co
 	return e.ListRoles(ctx)
 }
 
-// GetUserHighestPosition returns the lowest position number among the user's roles.
-// Lower position = higher rank, so this returns the user's "power level".
-// Returns PositionEveryone if the user has no assigned roles.
+// GetUserHighestPosition returns the highest position among the user's roles.
+// Higher position = higher rank, so this returns the user's "power level".
+// Returns PositionEveryone (0) if the user has no assigned roles.
+//
+// **Caller must check the error.** On lookup failure this returns
+// `(PositionEveryone, err)` — the zero-value position happens to be the
+// "everyone" rank, which is the worst-case default to silently swallow:
+// an actor with a transient KV error would appear unranked, defeating
+// any rank check that assumes the value is authoritative. `OutranksUser`
+// and the targeted-user helpers propagate the error; anything new that
+// reads this must do the same.
 func (e *Engine) GetUserHighestPosition(ctx context.Context, userID string) (int32, error) {
 	roleNames, err := e.GetUserRoles(ctx, userID)
 	if err != nil {
@@ -901,28 +933,26 @@ func (e *Engine) GetUserHighestPosition(ctx context.Context, userID string) (int
 		return PositionEveryone, nil
 	}
 
-	minPos := PositionEveryone
+	maxPos := PositionEveryone
 	for _, roleName := range roleNames {
-		// GetRole handles both virtual and KV-stored roles
 		role, err := e.GetRole(ctx, roleName)
 		if err != nil {
-			// Skip roles that no longer exist
 			continue
 		}
-		if role.Position < minPos {
-			minPos = role.Position
+		if role.Position > maxPos {
+			maxPos = role.Position
 		}
 	}
 
-	return minPos, nil
+	return maxPos, nil
 }
 
-// CanUserManageRole checks if a user can assign a role based on role hierarchy.
-// This checks if the actor outranks the ROLE being assigned/modified.
-// Owners (position 0) can manage any role including owner.
-// Other users can only manage roles with position > their own highest position.
+// CanUserManageRole checks whether a user is allowed to assign or modify a
+// role of the given position. Higher position = higher rank; the actor must
+// strictly outrank the role's position. Owners can manage any role,
+// including peers at the owner position.
 //
-// NOTE: For revoking roles, also check CanUserManageUser to ensure the actor
+// NOTE: For revoking roles, also check OutranksUser to ensure the actor
 // outranks the TARGET USER. This prevents peer-level demotion (e.g., Admin A
 // demoting Admin B).
 func (e *Engine) CanUserManageRole(ctx context.Context, userID string, rolePosition int32) (bool, error) {
@@ -930,17 +960,21 @@ func (e *Engine) CanUserManageRole(ctx context.Context, userID string, rolePosit
 	if err != nil {
 		return false, err
 	}
-	// Owners (position 0) can manage any role including owner
 	if userPos == PositionOwner {
 		return true, nil
 	}
-	// Others can only manage roles strictly below them
-	return userPos < rolePosition, nil
+	return userPos > rolePosition, nil
 }
 
-// CanUserManageUser checks if actor can manage target based on role hierarchy.
-// Returns true if actor's highest role position < target's highest role position.
-func (e *Engine) CanUserManageUser(ctx context.Context, actorID, targetID string) (bool, error) {
+// OutranksUser reports whether actor's highest role outranks target's highest
+// role by hierarchy position (higher position = higher rank).
+//
+// This is a HIERARCHY CHECK, not an authorization check. It answers
+// "does actor sit above target in the role ordering?" — nothing more.
+// Callers that need to gate a capability on top of hierarchy MUST also
+// check the relevant permission. See .claude/rules/authorization.md
+// (`permission AND OutranksUser`).
+func (e *Engine) OutranksUser(ctx context.Context, actorID, targetID string) (bool, error) {
 	actorPos, err := e.GetUserHighestPosition(ctx, actorID)
 	if err != nil {
 		return false, err
@@ -949,5 +983,5 @@ func (e *Engine) CanUserManageUser(ctx context.Context, actorID, targetID string
 	if err != nil {
 		return false, err
 	}
-	return actorPos < targetPos, nil
+	return actorPos > targetPos, nil
 }

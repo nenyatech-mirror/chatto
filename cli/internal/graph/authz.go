@@ -153,26 +153,91 @@ func (r *Resolver) requireRoomManageAuth(ctx context.Context, userID string) err
 	return nil
 }
 
-// requireSelfOrCanManage authenticates the caller and verifies they're
-// allowed to act on the target user. Permitted when caller == target, or
-// when caller's RBAC rank lets them manage the target (admin overrides
-// of mutations like updateProfile / uploadAvatar / updateSettings).
-func (r *Resolver) requireSelfOrCanManage(ctx context.Context, targetUserID string) (*corev1.User, error) {
+// requireUserAdminTarget verifies the caller can administer the given
+// target user via a "permission AND rank" two-step gate.
+//
+// Self-actions always pass. For caller != target, the caller must:
+//   - hold the role.assign permission (canManageInstanceUsers), AND
+//   - strictly outrank the target.
+//
+// Peer ranks deny — including peer owners. If two owners need to
+// administer each other's identity, one of them must demote the other
+// first. This matches RevokeServerRole's symmetric peer-deny.
+//
+// This is the canonical gate for targeted user mutations like
+// updateProfile / uploadAvatar / deleteAvatar / updateSettings /
+// AdminMutations.updateUser / ClearUsernameCooldown. Rank-only gating
+// is a bug — see .claude/rules/authorization.md and issue #435.
+func (r *Resolver) requireUserAdminTarget(ctx context.Context, callerID, targetID string) error {
+	if callerID == targetID {
+		return nil
+	}
+	canManage, err := r.canManageInstanceUsers(ctx, callerID)
+	if err != nil {
+		return fmt.Errorf("failed to check admin permission: %w", err)
+	}
+	if !canManage {
+		return core.ErrPermissionDenied
+	}
+	outranks, err := r.core.OutranksUser(ctx, callerID, targetID)
+	if err != nil {
+		return fmt.Errorf("failed to check role hierarchy: %w", err)
+	}
+	if !outranks {
+		return core.ErrPermissionDenied
+	}
+	return nil
+}
+
+// requireSelfOrUserAdminTarget authenticates the caller and gates via
+// requireUserAdminTarget. Convenience for the four self-or-admin
+// mutations (updateProfile / uploadAvatar / deleteAvatar / updateSettings).
+func (r *Resolver) requireSelfOrUserAdminTarget(ctx context.Context, targetUserID string) (*corev1.User, error) {
 	caller, err := requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if caller.Id == targetUserID {
-		return caller, nil
-	}
-	can, err := r.core.CanManageUser(ctx, caller.Id, targetUserID)
-	if err != nil {
+	if err := r.requireUserAdminTarget(ctx, caller.Id, targetUserID); err != nil {
 		return nil, err
 	}
-	if !can {
-		return nil, core.ErrPermissionDenied
-	}
 	return caller, nil
+}
+
+// requireUserPermissionTarget gates mutations that change a user's
+// authorization state — `grantUserPermission`, `denyUserPermission`,
+// `clearUserPermissionState`.
+//
+// Unlike requireUserAdminTarget, this helper has NO self-bypass. Editing
+// your own display name is privilege-neutral; granting yourself a
+// permission is a security-boundary change. The two operation categories
+// must not share a gate. Self-action falls through the same two checks
+// as any other caller: the strict-outrank step (`OutranksUser`) always
+// returns false for self, so self-action is impossible by construction
+// without a special branch.
+//
+// The permission gate is `role.manage`, not `role.assign`. Granting a
+// permission directly to a user is strictly more powerful than assigning
+// a role: it can attach any permission, including ones operators chose
+// not to put on any role. That matches the trust level of `role.manage`
+// (which is what lets you put a permission on a role in the first
+// place) rather than `role.assign` (which only shuffles existing role
+// memberships).
+func (r *Resolver) requireUserPermissionTarget(ctx context.Context, callerID, targetID string) error {
+	canManage, err := r.core.CanManageRoles(ctx, callerID)
+	if err != nil {
+		return fmt.Errorf("failed to check role.manage permission: %w", err)
+	}
+	if !canManage {
+		return core.ErrPermissionDenied
+	}
+	outranks, err := r.core.OutranksUser(ctx, callerID, targetID)
+	if err != nil {
+		return fmt.Errorf("failed to check role hierarchy: %w", err)
+	}
+	if !outranks {
+		return core.ErrPermissionDenied
+	}
+	return nil
 }
 
 // isInstanceAdmin returns true when the user has the owner or admin role.
@@ -187,34 +252,73 @@ func (r *Resolver) isInstanceAdmin(ctx context.Context, userID string) (bool, er
 	return r.core.IsInstanceAdmin(ctx, userID)
 }
 
-// isInstanceAdmin0 returns true if the user has the owner OR admin role.
-// Boolean-only flavour of isInstanceAdmin — convenience for callers that
-// previously branched on `isConfigOwner` and now check role membership.
-// Errors are swallowed (treated as "not admin") so call sites stay terse.
-func (r *Resolver) isInstanceAdmin0(ctx context.Context, userID string) bool {
-	ok, err := r.isInstanceAdmin(ctx, userID)
-	if err != nil {
-		r.logger.Warn("isInstanceAdmin0: role lookup failed; treating as non-admin",
-			"user_id", userID, "error", err)
-		return false
+// requireOutranksAuthor enforces the message-moderation rank check: when
+// the actor is moderating someone else's message (edit-any / delete-any),
+// they must strictly outrank the author. Self-action callers should skip
+// this — they don't need the rank check.
+//
+// Combine with the permission check: permission says "is this role allowed
+// to moderate at all?", rank says "are you allowed to moderate THIS
+// specific user?". This is the same "permission AND OutranksUser" shape as
+// requireUserAdminTarget, applied to message-content moderation. It
+// prevents a moderator from editing or deleting messages from higher-rank
+// users (admins, owners), and prevents peer-rank message moderation
+// generally.
+//
+// Returns nil for self (defensive — callers route self-edits through
+// CanEditOwnMessage, but the guard is here for completeness).
+func (r *Resolver) requireOutranksAuthor(ctx context.Context, actorID, authorID string) error {
+	if actorID == authorID {
+		return nil
 	}
-	return ok
+	outranks, err := r.core.OutranksUser(ctx, actorID, authorID)
+	if err != nil {
+		return fmt.Errorf("failed to check author rank: %w", err)
+	}
+	if !outranks {
+		return core.ErrPermissionDenied
+	}
+	return nil
 }
 
-// isInstanceOwner0 returns true if the user has the owner role.
-// Boolean-only flavour for hierarchy-check call sites that previously
-// short-circuited on `isConfigOwner` (the "config-designated top of
-// hierarchy" check). Post-Phase-5 a config owner is just an owner-role
-// holder, so this stands in for that bypass without re-introducing the
-// dual-path lookup.
-func (r *Resolver) isInstanceOwner0(ctx context.Context, userID string) bool {
-	ok, err := r.core.IsInstanceOwner(ctx, userID)
+// requireRoleRosterAccess gates the role-roster and per-user-permission
+// resolvers (Server.roleUsers / userEffectivePermissions / userEffectiveDenials).
+// The caller must hold `role.assign` — the same permission required to
+// actually modify role assignments. Non-admin callers cannot enumerate
+// "who has the admin role" or read another user's effective permissions.
+func (r *Resolver) requireRoleRosterAccess(ctx context.Context) error {
+	caller, err := requireAuth(ctx)
 	if err != nil {
-		r.logger.Warn("isInstanceOwner0: role lookup failed; treating as non-owner",
-			"user_id", userID, "error", err)
+		return err
+	}
+	can, err := r.canManageInstanceUsers(ctx, caller.Id)
+	if err != nil {
+		return err
+	}
+	if !can {
+		return core.ErrPermissionDenied
+	}
+	return nil
+}
+
+// canViewUserEmails returns true when the caller is either the target
+// user themselves or holds the admin.view-users permission. Used by
+// User.verifiedEmails and User.hasVerifiedEmail to gate access to email
+// content.
+func (r *Resolver) canViewUserEmails(ctx context.Context, targetUserID string) bool {
+	caller := auth.ForContext(ctx)
+	if caller == nil {
 		return false
 	}
-	return ok
+	if caller.Id == targetUserID {
+		return true
+	}
+	can, err := r.core.CanAdminUsersView(ctx, caller.Id)
+	if err != nil {
+		r.logger.Warn("canViewUserEmails: permission check failed; treating as unauthorized", "error", err)
+		return false
+	}
+	return can
 }
 
 // requireInstancePermission verifies the user has a specific server permission.

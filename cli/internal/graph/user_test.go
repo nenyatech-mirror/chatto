@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"hmans.de/chatto/internal/core"
 	"hmans.de/chatto/internal/graph/model"
 )
 
@@ -158,61 +159,152 @@ func TestUserResolver_HasVerifiedEmail(t *testing.T) {
 }
 
 // ============================================================================
-// User.VerifiedEmails Field Resolver Tests
+// Role-roster Authorization
 // ============================================================================
 
+// TestServer_RoleRosterRequiresPermission asserts that the role-roster
+// resolvers (Server.roleUsers, Server.userEffectivePermissions,
+// Server.userEffectiveDenials, Server.roles, Server.role) require the
+// `role.assign` permission. Without this gate, any authenticated user
+// could enumerate "who's an admin" and "which permissions does this user
+// hold" — operationally sensitive information.
+func TestServer_RoleRosterRequiresPermission(t *testing.T) {
+	env := setupTestResolver(t)
+	server := &model.Server{}
+
+	regular := env.createVerifiedUser(t, "regular-roster", "Regular", "password123")
+	regularCtx := env.authContextForUser(regular)
+
+	t.Run("roleUsers denied to regular user", func(t *testing.T) {
+		_, err := env.resolver.Server().RoleUsers(regularCtx, server, core.RoleAdmin)
+		if !errors.Is(err, core.ErrPermissionDenied) {
+			t.Errorf("expected ErrPermissionDenied, got %v", err)
+		}
+	})
+
+	t.Run("userEffectivePermissions denied to regular user", func(t *testing.T) {
+		_, err := env.resolver.Server().UserEffectivePermissions(regularCtx, server, env.testUser.Id)
+		if !errors.Is(err, core.ErrPermissionDenied) {
+			t.Errorf("expected ErrPermissionDenied, got %v", err)
+		}
+	})
+
+	t.Run("userEffectiveDenials denied to regular user", func(t *testing.T) {
+		_, err := env.resolver.Server().UserEffectiveDenials(regularCtx, server, env.testUser.Id)
+		if !errors.Is(err, core.ErrPermissionDenied) {
+			t.Errorf("expected ErrPermissionDenied, got %v", err)
+		}
+	})
+
+	t.Run("Server.roles is available to regular user (role catalog is public)", func(t *testing.T) {
+		// Server.roles returns role definitions (name, displayName, permissions
+		// granted to each role). That's the operational role catalog — not
+		// per-user roster info — and every authenticated user can see it.
+		// The sensitive thing (who has the admin role) is roleUsers, gated above.
+		if _, err := env.resolver.Server().Roles(regularCtx, server); err != nil {
+			t.Errorf("Server.roles should be readable by any authenticated user, got %v", err)
+		}
+	})
+
+	t.Run("admin can read the gated roster", func(t *testing.T) {
+		admin := env.createVerifiedUser(t, "roster-admin", "Roster Admin", "password123")
+		if err := env.core.AssignServerRole(env.ctx, core.SystemActorID, admin.Id, core.RoleAdmin); err != nil {
+			t.Fatalf("AssignServerRole: %v", err)
+		}
+		adminCtx := env.authContextForUser(admin)
+		if _, err := env.resolver.Server().RoleUsers(adminCtx, server, core.RoleAdmin); err != nil {
+			t.Errorf("admin RoleUsers: %v", err)
+		}
+	})
+
+	t.Run("unauthenticated denied", func(t *testing.T) {
+		_, err := env.resolver.Server().RoleUsers(env.unauthContext(), server, core.RoleAdmin)
+		if !errors.Is(err, ErrNotAuthenticated) {
+			t.Errorf("expected ErrNotAuthenticated, got %v", err)
+		}
+	})
+}
+
+// ============================================================================
+// Email Exposure Authorization
+// ============================================================================
+
+// TestUserResolver_VerifiedEmails locks down the access-control contract for
+// User.verifiedEmails: self always sees their own, holders of
+// `admin.view-users` see anyone's, and everyone else gets an empty list
+// (not an error — we don't want the field's existence to leak whether the
+// caller is authorized).
 func TestUserResolver_VerifiedEmails(t *testing.T) {
 	env := setupTestResolverWithAdmin(t, []string{"testuser@example.com"})
 	resolver := env.resolver.User()
 
-	t.Run("can view own verified emails", func(t *testing.T) {
+	t.Run("self sees own verified emails", func(t *testing.T) {
 		emails, err := resolver.VerifiedEmails(env.authContext(), env.testUser)
 		if err != nil {
-			t.Fatalf("expected success, got error: %v", err)
+			t.Fatalf("VerifiedEmails: %v", err)
 		}
-		if len(emails) == 0 {
-			t.Fatal("expected at least one verified email")
-		}
-		if emails[0] != "testuser@example.com" {
-			t.Errorf("expected 'testuser@example.com', got %s", emails[0])
+		if len(emails) == 0 || emails[0] != "testuser@example.com" {
+			t.Errorf("expected to see own email, got %v", emails)
 		}
 	})
 
-	t.Run("non-admin gets empty list for other user", func(t *testing.T) {
-		otherUser := env.createVerifiedUser(t, "other-ve", "Other VE", "password123")
-
-		emails, err := resolver.VerifiedEmails(env.authContextForUser(otherUser), env.testUser)
+	t.Run("admin (admin.view-users) sees other user's emails", func(t *testing.T) {
+		other := env.createVerifiedUser(t, "ve-other", "Other", "password123")
+		emails, err := resolver.VerifiedEmails(env.authContext(), other)
 		if err != nil {
-			t.Fatalf("expected success, got error: %v", err)
+			t.Fatalf("VerifiedEmails: %v", err)
+		}
+		if len(emails) == 0 || emails[0] != "ve-other@example.com" {
+			t.Errorf("admin should see other user's emails, got %v", emails)
+		}
+	})
+
+	t.Run("regular user gets empty list for other user", func(t *testing.T) {
+		// Plain user — no admin.view-users permission.
+		regular := env.createVerifiedUser(t, "ve-regular", "Regular", "password123")
+		other := env.createVerifiedUser(t, "ve-target", "Target", "password123")
+
+		emails, err := resolver.VerifiedEmails(env.authContextForUser(regular), other)
+		if err != nil {
+			t.Fatalf("VerifiedEmails: %v", err)
 		}
 		if len(emails) != 0 {
-			t.Errorf("expected empty list for non-admin, got %v", emails)
+			t.Errorf("regular user should get empty list, got %v", emails)
 		}
 	})
 
 	t.Run("unauthenticated gets empty list", func(t *testing.T) {
 		emails, err := resolver.VerifiedEmails(env.unauthContext(), env.testUser)
 		if err != nil {
-			t.Fatalf("expected success, got error: %v", err)
+			t.Fatalf("VerifiedEmails: %v", err)
 		}
 		if len(emails) != 0 {
-			t.Errorf("expected empty list for unauthenticated, got %v", emails)
+			t.Errorf("unauthenticated should get empty list, got %v", emails)
 		}
 	})
 
-	t.Run("admin can view other user's verified emails", func(t *testing.T) {
-		otherUser := env.createVerifiedUser(t, "other-ve-admin", "Other VE Admin", "password123")
+	t.Run("hasVerifiedEmail is gated the same way", func(t *testing.T) {
+		// A regular user querying another user's hasVerifiedEmail must NOT
+		// learn whether the target has a verified address — that's a weak
+		// confirmation oracle for email-fishing.
+		regular := env.createVerifiedUser(t, "hve-regular", "Regular", "password123")
+		other := env.createVerifiedUser(t, "hve-target", "Target", "password123")
 
-		// testUser is admin
-		emails, err := resolver.VerifiedEmails(env.authContext(), otherUser)
+		has, err := resolver.HasVerifiedEmail(env.authContextForUser(regular), other)
 		if err != nil {
-			t.Fatalf("expected success, got error: %v", err)
+			t.Fatalf("HasVerifiedEmail: %v", err)
 		}
-		if len(emails) == 0 {
-			t.Fatal("expected admin to see other user's emails")
+		if has {
+			t.Errorf("regular user should NOT see other user's hasVerifiedEmail")
 		}
-		if emails[0] != "other-ve-admin@example.com" {
-			t.Errorf("expected 'other-ve-admin@example.com', got %s", emails[0])
+
+		// Self always works.
+		has, err = resolver.HasVerifiedEmail(env.authContextForUser(regular), regular)
+		if err != nil {
+			t.Fatalf("HasVerifiedEmail (self): %v", err)
+		}
+		if !has {
+			t.Errorf("self should see own hasVerifiedEmail")
 		}
 	})
 }

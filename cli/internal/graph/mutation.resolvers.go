@@ -952,13 +952,19 @@ func (r *mutationResolver) DeleteMessage(ctx context.Context, input model.Delete
 			return false, core.ErrPermissionDenied
 		}
 	} else {
-		// Non-author deleting: check message.delete.any permission (moderator)
+		// Non-author deleting: check message.delete-any permission AND
+		// strict-outrank on the author. The rank check prevents a
+		// moderator from deleting messages of higher-ranked users
+		// (admins, owners) — see requireOutranksAuthor.
 		can, err := r.core.CanDeleteAnyMessage(ctx, user.Id, kind, input.RoomID)
 		if err != nil {
 			return false, err
 		}
 		if !can {
 			return false, core.ErrPermissionDenied
+		}
+		if err := r.requireOutranksAuthor(ctx, user.Id, authorID); err != nil {
+			return false, err
 		}
 	}
 
@@ -1016,12 +1022,19 @@ func (r *mutationResolver) EditMessage(ctx context.Context, input model.EditMess
 		}
 		// Edit window is enforced in Core.EditMessage for author edits
 	} else {
+		// Non-author editing: check message.edit-any permission AND
+		// strict-outrank on the author. The rank check prevents a
+		// moderator from editing messages of higher-ranked users
+		// (admins, owners) — see requireOutranksAuthor.
 		can, err := r.core.CanEditAnyMessage(ctx, user.Id, kind, input.RoomID)
 		if err != nil {
 			return false, err
 		}
 		if !can {
 			return false, core.ErrPermissionDenied
+		}
+		if err := r.requireOutranksAuthor(ctx, user.Id, messageBody.AuthorId); err != nil {
+			return false, err
 		}
 	}
 
@@ -1102,7 +1115,7 @@ func (r *mutationResolver) DeleteLinkPreview(ctx context.Context, input model.De
 
 // UpdateProfile is the resolver for the updateProfile field.
 func (r *mutationResolver) UpdateProfile(ctx context.Context, input model.UpdateProfileInput) (*corev1.User, error) {
-	if _, err := r.requireSelfOrCanManage(ctx, input.UserID); err != nil {
+	if _, err := r.requireSelfOrUserAdminTarget(ctx, input.UserID); err != nil {
 		return nil, err
 	}
 
@@ -1132,7 +1145,7 @@ func (r *mutationResolver) UpdateProfile(ctx context.Context, input model.Update
 
 // UploadAvatar is the resolver for the uploadAvatar field.
 func (r *mutationResolver) UploadAvatar(ctx context.Context, input model.UploadAvatarInput) (*corev1.User, error) {
-	if _, err := r.requireSelfOrCanManage(ctx, input.UserID); err != nil {
+	if _, err := r.requireSelfOrUserAdminTarget(ctx, input.UserID); err != nil {
 		return nil, err
 	}
 
@@ -1151,7 +1164,7 @@ func (r *mutationResolver) UploadAvatar(ctx context.Context, input model.UploadA
 
 // DeleteAvatar is the resolver for the deleteAvatar field.
 func (r *mutationResolver) DeleteAvatar(ctx context.Context, userID string) (*corev1.User, error) {
-	if _, err := r.requireSelfOrCanManage(ctx, userID); err != nil {
+	if _, err := r.requireSelfOrUserAdminTarget(ctx, userID); err != nil {
 		return nil, err
 	}
 

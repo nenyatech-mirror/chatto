@@ -446,7 +446,7 @@ test.describe.skip('Space Roles Management', () => {
       await spaceRolesPage.expectPermissionNotGranted('room.list');
     });
 
-    test('system role owner has all permissions explicitly granted and editable', async ({
+    test('system role owner has enumerated admin permissions granted and editable', async ({
       spaceRolesPage
     }) => {
       const { page } = spaceRolesPage;
@@ -456,13 +456,13 @@ test.describe.skip('Space Roles Management', () => {
 
       await spaceRolesPage.gotoEditRole(space.id, 'owner');
 
-      // Owner role has all permissions explicitly granted (not implicit)
-      // Permissions should be editable. Permission editing now happens on
-      // the matrix at the roles list, so the helpers auto-navigate there.
-      await spaceRolesPage.expectPermissionEditable('space.manage');
-      await spaceRolesPage.expectPermissionGranted('space.manage');
-      await spaceRolesPage.expectPermissionGranted('role.manage');
-      await spaceRolesPage.expectPermissionGranted('member.invite');
+      // Owner role holds the full enumerated permission set — same as
+      // admin. There's no super-permission short-circuit anymore;
+      // owners pass every check because their role explicitly grants
+      // every server-scope permission. Pick a representative admin
+      // permission to assert against the matrix.
+      await spaceRolesPage.expectPermissionEditable('user.delete-any');
+      await spaceRolesPage.expectPermissionGranted('user.delete-any');
     });
 
     test('system roles cannot be deleted', async ({ spaceRolesPage }) => {

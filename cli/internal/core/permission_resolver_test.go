@@ -301,36 +301,34 @@ func TestPermissionResolver_HasSpacePermission_InstanceFallback(t *testing.T) {
 	})
 }
 
-func TestPermissionResolver_HasSpacePermission_DenyWins(t *testing.T) {
+func TestPermissionResolver_ExplicitDenyOnHighestRole(t *testing.T) {
 	core, _ := setupTestCore(t)
 	ctx := testContext(t)
 
-	// Create user and assign owner role.
-	user, _ := core.CreateUser(ctx, "system", "testuser", "Test User", "password123")
-	if err := core.AssignServerRole(ctx, SystemActorID, user.Id, RoleOwner); err != nil {
+	// Use an admin user. An owner deny would be just as effective now
+	// that the bypass short-circuit is gone, but admin makes the test
+	// less dependent on owner-role role-management quirks.
+	user, _ := core.CreateUser(ctx, "system", "deny-on-highest", "Test User", "password123")
+	if err := core.AssignServerRole(ctx, SystemActorID, user.Id, RoleAdmin); err != nil {
 		t.Fatalf("AssignServerRole: %v", err)
 	}
 
-	t.Run("deny-wins at space level", func(t *testing.T) {
-		// Grant permission to member role
-		err := core.GrantInstancePermission(ctx, RoleEveryone, PermMessagePost)
-		if err != nil {
+	t.Run("explicit deny on highest-rank role wins over lower-rank grant", func(t *testing.T) {
+		// `everyone` grants the perm; `admin` (the user's highest role) denies it.
+		// Walker visits admin first → deny → stop. Result: denied.
+		if err := core.GrantInstancePermission(ctx, RoleEveryone, PermMessagePost); err != nil {
 			t.Fatalf("Failed to grant permission: %v", err)
 		}
-
-		// Deny to admin role (user is admin)
-		err = core.DenyInstancePermission(ctx, RoleOwner, PermMessagePost)
-		if err != nil {
+		if err := core.DenyInstancePermission(ctx, RoleAdmin, PermMessagePost); err != nil {
 			t.Fatalf("Failed to deny permission: %v", err)
 		}
 
-		// User should NOT have the permission (deny wins across all roles)
 		has, err := core.permissionResolver.HasSpacePermission(ctx, user.Id, KindChannel, PermMessagePost)
 		if err != nil {
 			t.Fatalf("HasSpacePermission() error = %v", err)
 		}
 		if has {
-			t.Error("Expected deny to win at space level")
+			t.Error("Expected admin deny to beat everyone grant under hierarchy-wins")
 		}
 	})
 }
@@ -453,27 +451,26 @@ func TestPermissionResolver_HasRoomPermission_AdminRoleDenials(t *testing.T) {
 	core, _ := setupTestCore(t)
 	ctx := testContext(t)
 
-	// Create user and assign owner role (formerly via CreateSpace).
+	// Admin role here; the test's point is "no role has structural
+	// immunity to a room-level deny." After the bypass primitive was
+	// removed, the same claim holds for owner too.
 	user, _ := core.CreateUser(ctx, "system", "testuser", "Test User", "password123")
-	if err := core.AssignServerRole(ctx, SystemActorID, user.Id, RoleOwner); err != nil {
+	if err := core.AssignServerRole(ctx, SystemActorID, user.Id, RoleAdmin); err != nil {
 		t.Fatalf("AssignServerRole: %v", err)
 	}
 	room, _ := core.CreateRoom(ctx, user.Id, KindChannel, "General", "General chat")
 
 	t.Run("admin role is subject to room-level denials like any other role", func(t *testing.T) {
-		// Deny permission at room level for admin role
-		err := core.DenyRoomPermission(ctx, room.Id, RoleOwner, PermMessagePost)
-		if err != nil {
+		if err := core.DenyRoomPermission(ctx, room.Id, RoleAdmin, PermMessagePost); err != nil {
 			t.Fatalf("Failed to deny room permission: %v", err)
 		}
 
-		// User is space admin - should NOT have permission because admin role has no immunity
 		has, err := core.permissionResolver.HasRoomPermission(ctx, user.Id, KindChannel, room.Id, PermMessagePost)
 		if err != nil {
 			t.Fatalf("HasRoomPermission() error = %v", err)
 		}
 		if has {
-			t.Error("Expected admin role denial to be enforced (admin has no special immunity)")
+			t.Error("Expected admin role denial to be enforced (admin has no special immunity without bypass)")
 		}
 	})
 
@@ -587,26 +584,25 @@ func TestPermissionResolver_HasRoomPermission_RoomDenialOverridesSpaceGrant(t *t
 	}
 }
 
-func TestPermissionResolver_HasRoomPermission_RoomGrantCannotOverrideSpaceDenial(t *testing.T) {
+func TestPermissionResolver_HasRoomPermission_RoomGrantOverridesServerDenialForSameRole(t *testing.T) {
 	core, _ := setupTestCore(t)
 	ctx := testContext(t)
 
-	admin, _ := core.CreateUser(ctx, "system", "roomcantoverride1admin", "Admin", "password123")
+	admin, _ := core.CreateUser(ctx, "system", "roomoverrideadmin", "Admin", "password123")
 	room, _ := core.CreateRoom(ctx, admin.Id, KindChannel, "general", "General")
 
-	member, _ := core.CreateUser(ctx, "system", "roomcantoverride1member", "Member", "password123")
-	// Deny at space level
+	member, _ := core.CreateUser(ctx, "system", "roomoverridemember", "Member", "password123")
 	core.DenyInstancePermission(ctx, RoleEveryone, PermMessagePost)
-
-	// Grant at room level
 	core.GrantRoomPermission(ctx, room.Id, RoleEveryone, PermMessagePost)
 
+	// Under the unified hierarchy-wins algorithm, the room-level decision
+	// for a role takes precedence over that same role's server-level decision.
 	has, err := core.permissionResolver.HasRoomPermission(ctx, member.Id, KindChannel, room.Id, PermMessagePost)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if has {
-		t.Error("Expected space denial to block room grant (deny always wins)")
+	if !has {
+		t.Error("expected room grant to override server deny for the same role")
 	}
 }
 
@@ -788,91 +784,316 @@ func TestPermissionResolver_HasRoomPermission_MultiplePermissionsPerRoom(t *test
 }
 
 // ============================================================================
-// Deny-Always-Wins Tests
+// Per-User Override Contract — user-level grants/denies beat role decisions
 // ============================================================================
 
-func TestPermissionResolver_DenyAlwaysWins(t *testing.T) {
+func TestPermissionResolver_UserLevelOverrides(t *testing.T) {
 	core, _ := setupTestCore(t)
 	ctx := testContext(t)
 
-	// Create admin and regular member
+	t.Run("user-level deny suspends a user despite role grants", func(t *testing.T) {
+		// The classic suspension use case: deny a perm directly to this
+		// user, and no role they have can re-grant it.
+		mod, _ := core.CreateUser(ctx, SystemActorID, "user-deny-mod", "Mod", "password123")
+		if err := core.AssignServerRole(ctx, SystemActorID, mod.Id, RoleModerator); err != nil {
+			t.Fatalf("AssignServerRole: %v", err)
+		}
+		// Moderator has message.post via default everyone-grants; verify baseline.
+		has, _ := core.HasInstancePermission(ctx, mod.Id, PermMessagePost)
+		if !has {
+			t.Fatal("baseline: moderator should have message.post")
+		}
+		// Suspend posting by user-deny.
+		if err := core.DenyUserPermission(ctx, mod.Id, PermMessagePost); err != nil {
+			t.Fatalf("DenyUserPermission: %v", err)
+		}
+		has, _ = core.HasInstancePermission(ctx, mod.Id, PermMessagePost)
+		if has {
+			t.Error("expected user-deny to suspend the moderator's message.post")
+		}
+	})
+
+	t.Run("user-level deny beats role grants on owner", func(t *testing.T) {
+		// Owner is just a role with every server-scope permission granted;
+		// a user-level deny for a specific permission still suspends it.
+		// This is the "ban one owner from posting" extreme case.
+		owner, _ := core.CreateUser(ctx, SystemActorID, "user-deny-owner", "Owner", "password123")
+		if err := core.AssignInstanceOwnerRole(ctx, owner.Id); err != nil {
+			t.Fatalf("AssignInstanceOwnerRole: %v", err)
+		}
+		if err := core.DenyUserPermission(ctx, owner.Id, PermMessagePost); err != nil {
+			t.Fatalf("DenyUserPermission: %v", err)
+		}
+		has, _ := core.HasInstancePermission(ctx, owner.Id, PermMessagePost)
+		if has {
+			t.Error("expected user-deny to override owner-role grant for message.post")
+		}
+	})
+
+	t.Run("user-level grant gives a single user a permission no role grants them", func(t *testing.T) {
+		// The classic "give this one user admin powers on room X without
+		// inventing a role" use case.
+		user, _ := core.CreateUser(ctx, SystemActorID, "user-grant-bob", "Bob", "password123")
+		room, _ := core.CreateRoom(ctx, SystemActorID, KindChannel, "general", "General")
+
+		// Without a grant, bob can't delete-any in this room.
+		has, _ := core.permissionResolver.HasRoomPermission(ctx, user.Id, KindChannel, room.Id, PermMessageDeleteAny)
+		if has {
+			t.Fatal("baseline: bob should not have delete-any")
+		}
+
+		// Grant directly on the user, at room scope.
+		if err := core.GrantUserRoomPermission(ctx, room.Id, user.Id, PermMessageDeleteAny); err != nil {
+			t.Fatalf("GrantUserRoomPermission: %v", err)
+		}
+		has, _ = core.permissionResolver.HasRoomPermission(ctx, user.Id, KindChannel, room.Id, PermMessageDeleteAny)
+		if !has {
+			t.Error("expected user-level room grant to give bob delete-any in this room")
+		}
+
+		// Other rooms unaffected.
+		other, _ := core.CreateRoom(ctx, SystemActorID, KindChannel, "other", "Other")
+		has, _ = core.permissionResolver.HasRoomPermission(ctx, user.Id, KindChannel, other.Id, PermMessageDeleteAny)
+		if has {
+			t.Error("user-level room grant should not leak to other rooms")
+		}
+	})
+
+	t.Run("user-level room grant beats role server-level deny for the same user", func(t *testing.T) {
+		// Operator denies posting server-wide via the everyone role, then
+		// re-enables it for one specific user in one specific room.
+		user, _ := core.CreateUser(ctx, SystemActorID, "user-room-grant", "User", "password123")
+		room, _ := core.CreateRoom(ctx, SystemActorID, KindChannel, "private", "Private")
+		if err := core.DenyInstancePermission(ctx, RoleEveryone, PermMessagePost); err != nil {
+			t.Fatalf("DenyInstancePermission: %v", err)
+		}
+		// Without the user-grant, user can't post.
+		has, _ := core.permissionResolver.HasRoomPermission(ctx, user.Id, KindChannel, room.Id, PermMessagePost)
+		if has {
+			t.Fatal("baseline: user should be denied by everyone-role deny")
+		}
+		// User-level room grant.
+		if err := core.GrantUserRoomPermission(ctx, room.Id, user.Id, PermMessagePost); err != nil {
+			t.Fatalf("GrantUserRoomPermission: %v", err)
+		}
+		has, _ = core.permissionResolver.HasRoomPermission(ctx, user.Id, KindChannel, room.Id, PermMessagePost)
+		if !has {
+			t.Error("expected user-level room grant to override everyone-role server deny")
+		}
+	})
+
+	t.Run("DM boundary deny beats user-level room grant", func(t *testing.T) {
+		// Security invariant: the DM boundary deny-list is checked BEFORE
+		// user-level overrides. Even an explicit user-level grant of
+		// message.delete-any in a DM room must not allow it — DM privacy
+		// is non-negotiable.
+		c, _ := setupTestCore(t)
+		ctx2 := testContext(t)
+		user, _ := c.CreateUser(ctx2, SystemActorID, "dm-boundary-user", "User", "password123")
+		dmRoomID := "R_dm_boundary_user_test"
+		if err := c.GrantUserRoomPermission(ctx2, dmRoomID, user.Id, PermMessageDeleteAny); err != nil {
+			t.Fatalf("GrantUserRoomPermission: %v", err)
+		}
+		has, _ := c.permissionResolver.HasRoomPermission(ctx2, user.Id, KindDM, dmRoomID, PermMessageDeleteAny)
+		if has {
+			t.Error("expected DM boundary deny to override user-level grant for message.delete-any")
+		}
+	})
+
+	t.Run("DM boundary deny applies to owner too", func(t *testing.T) {
+		// Owner has every server-scope permission via enumerated grants —
+		// the boundary deny-list must still block DM moderation. The
+		// boundary check runs before Phase 1 (user-level) and Phase 2
+		// (role walk), so no role can sidestep it.
+		c, _ := setupTestCore(t)
+		ctx2 := testContext(t)
+		owner, _ := c.CreateUser(ctx2, SystemActorID, "dm-boundary-owner", "Owner", "password123")
+		if err := c.AssignInstanceOwnerRole(ctx2, owner.Id); err != nil {
+			t.Fatalf("AssignInstanceOwnerRole: %v", err)
+		}
+		// Sanity: owner has the perms via the owner-role grants.
+		has, _ := c.HasInstancePermission(ctx2, owner.Id, PermMessagePost)
+		if !has {
+			t.Fatal("baseline: owner should resolve allow for message.post via owner-role grant")
+		}
+		// In DM context, the boundary deny-list still blocks.
+		dmRoomID := "R_dm_boundary_owner_test"
+		for _, perm := range []Permission{PermMessageEditAny, PermMessageDeleteAny, PermRoomManage} {
+			has, _ := c.permissionResolver.HasRoomPermission(ctx2, owner.Id, KindDM, dmRoomID, perm)
+			if has {
+				t.Errorf("expected DM boundary to block %s for owner, got allow", perm)
+			}
+		}
+	})
+
+	t.Run("clear restores normal role-based resolution", func(t *testing.T) {
+		// Use a fresh core so prior subtests' state can't contaminate this one.
+		c, _ := setupTestCore(t)
+		c2ctx := testContext(t)
+		user, _ := c.CreateUser(c2ctx, SystemActorID, "clear-user", "User", "password123")
+		has, _ := c.HasInstancePermission(c2ctx, user.Id, PermMessagePost)
+		if !has {
+			t.Fatal("baseline: user should have message.post via everyone")
+		}
+		_ = c.DenyUserPermission(c2ctx, user.Id, PermMessagePost)
+		has, _ = c.HasInstancePermission(c2ctx, user.Id, PermMessagePost)
+		if has {
+			t.Fatal("expected user-deny to take effect")
+		}
+		if err := c.ClearUserPermissionState(c2ctx, user.Id, PermMessagePost); err != nil {
+			t.Fatalf("ClearUserPermissionState: %v", err)
+		}
+		has, _ = c.HasInstancePermission(c2ctx, user.Id, PermMessagePost)
+		if !has {
+			t.Error("expected clear to restore default-allow")
+		}
+	})
+}
+
+// ============================================================================
+// DM Permission Contract — locks down what the unified walker resolves
+// in a DM room for a regular participant and for elevated roles. The DM
+// boundary deny-list is the security boundary; everything else flows
+// through normal RBAC.
+// ============================================================================
+
+func TestPermissionResolver_DMContract(t *testing.T) {
+	core, _ := setupTestCore(t)
+	ctx := testContext(t)
+
+	regular, _ := core.CreateUser(ctx, "system", "dmcontract-regular", "Regular", "password123")
+	moderator, _ := core.CreateUser(ctx, "system", "dmcontract-mod", "Moderator", "password123")
+	if err := core.AssignServerRole(ctx, SystemActorID, moderator.Id, RoleModerator); err != nil {
+		t.Fatalf("AssignServerRole: %v", err)
+	}
+
+	// Synthetic DM room ID — the walker doesn't care about room existence,
+	// only about whether room-scope KV entries exist for it (we set none).
+	dmRoomID := "R_dm_contract_test"
+
+	// Each row encodes the expected resolution for the given persona at
+	// room scope in a DM. Asserts the new contract — change requires a
+	// deliberate review.
+	type expected struct {
+		regular   bool
+		moderator bool
+	}
+	cases := []struct {
+		perm Permission
+		want expected
+		why  string
+	}{
+		// === Boundary-denied (privacy + category mismatch) ===
+		{PermRoomManage, expected{false, false}, "DM rooms can't be managed channel-style"},
+		{PermMessageEditAny, expected{false, false}, "DM privacy: no cross-user moderation"},
+		{PermMessageDeleteAny, expected{false, false}, "DM privacy: no cross-user moderation"},
+		{PermMessageEcho, expected{false, false}, "echo channel-only"},
+		{PermRoomList, expected{false, false}, "DMs use their own listing API"},
+		{PermRoomCreate, expected{false, false}, "DMs use FindOrCreateDM"},
+
+		// === Resolvable, default-granted to everyone === (so regular passes)
+		{PermRoomJoin, expected{true, true}, "auto-join on DM creation; perm resolves"},
+		{PermRoomLeave, expected{true, true}, "regular DM participants can leave"},
+		{PermMessagePost, expected{true, true}, "core DM capability"},
+		{PermMessagePostInThread, expected{true, true}, "core DM capability"},
+		{PermMessageReply, expected{true, true}, "core DM capability"},
+		{PermMessageReplyInThread, expected{true, true}, "core DM capability"},
+		{PermMessageEditOwn, expected{true, true}, "core DM capability"},
+		{PermMessageDeleteOwn, expected{true, true}, "core DM capability"},
+		{PermMessageReact, expected{true, true}, "core DM capability"},
+	}
+
+	for _, tc := range cases {
+		t.Run(string(tc.perm), func(t *testing.T) {
+			gotRegular, err := core.permissionResolver.HasRoomPermission(ctx, regular.Id, KindDM, dmRoomID, tc.perm)
+			if err != nil {
+				t.Fatalf("regular HasRoomPermission: %v", err)
+			}
+			if gotRegular != tc.want.regular {
+				t.Errorf("regular: HasRoomPermission(%s) = %v, want %v (%s)", tc.perm, gotRegular, tc.want.regular, tc.why)
+			}
+			gotMod, err := core.permissionResolver.HasRoomPermission(ctx, moderator.Id, KindDM, dmRoomID, tc.perm)
+			if err != nil {
+				t.Fatalf("moderator HasRoomPermission: %v", err)
+			}
+			if gotMod != tc.want.moderator {
+				t.Errorf("moderator: HasRoomPermission(%s) = %v, want %v (%s)", tc.perm, gotMod, tc.want.moderator, tc.why)
+			}
+		})
+	}
+}
+
+// ============================================================================
+// Hierarchy-Wins Tests — room overrides take precedence over server defaults
+// within the same role; higher-ranked roles beat lower-ranked ones across
+// roles. See PermissionResolver's doc comment.
+// ============================================================================
+
+func TestPermissionResolver_RoomOverridesServerForSameRole(t *testing.T) {
+	core, _ := setupTestCore(t)
+	ctx := testContext(t)
+
 	admin, _ := core.CreateUser(ctx, "system", "hieradmin", "Admin User", "password123")
 	room, _ := core.CreateRoom(ctx, admin.Id, KindChannel, "General", "General chat")
 
 	member, _ := core.CreateUser(ctx, "system", "hiermember", "Member User", "password123")
-	t.Run("space deny blocks room grant", func(t *testing.T) {
-		// Deny at space level
-		err := core.DenyInstancePermission(ctx, RoleEveryone, PermMessageReact)
-		if err != nil {
-			t.Fatalf("Failed to deny space permission: %v", err)
+
+	t.Run("room grant overrides server deny on the same role", func(t *testing.T) {
+		// Server-wide deny on everyone, room-level grant on everyone.
+		// Under hierarchy-wins, the room-level decision wins for the same role.
+		if err := core.DenyInstancePermission(ctx, RoleEveryone, PermMessageReact); err != nil {
+			t.Fatalf("DenyInstancePermission: %v", err)
+		}
+		if err := core.GrantRoomPermission(ctx, room.Id, RoleEveryone, PermMessageReact); err != nil {
+			t.Fatalf("GrantRoomPermission: %v", err)
 		}
 
-		// Grant at room level
-		err = core.GrantRoomPermission(ctx, room.Id, RoleEveryone, PermMessageReact)
-		if err != nil {
-			t.Fatalf("Failed to grant room permission: %v", err)
-		}
-
-		// Deny always wins: space deny blocks room grant
 		has, err := core.permissionResolver.HasRoomPermission(ctx, member.Id, KindChannel, room.Id, PermMessageReact)
 		if err != nil {
-			t.Fatalf("HasRoomPermission() error = %v", err)
+			t.Fatalf("HasRoomPermission: %v", err)
 		}
-		if has {
-			t.Error("Expected space deny to block room grant (deny always wins)")
+		if !has {
+			t.Error("expected room grant to override server deny for the same role")
 		}
 	})
 
-	t.Run("instance deny blocks space grant", func(t *testing.T) {
-		t.Skip("Phase 5 collapsed instance/space tiers; this cross-tier scenario no longer applies.")
-	})
-
-	t.Run("instance deny blocks room grant", func(t *testing.T) {
-		// Deny at instance level for instance-everyone
-		err := core.DenyInstancePermission(ctx, RoleEveryone, PermMessagePost)
-		if err != nil {
-			t.Fatalf("Failed to deny instance permission: %v", err)
+	t.Run("room deny overrides server grant on the same role", func(t *testing.T) {
+		if err := core.GrantInstancePermission(ctx, RoleEveryone, PermMessagePost); err != nil {
+			t.Fatalf("GrantInstancePermission: %v", err)
+		}
+		if err := core.DenyRoomPermission(ctx, room.Id, RoleEveryone, PermMessagePost); err != nil {
+			t.Fatalf("DenyRoomPermission: %v", err)
 		}
 
-		// Grant at room level
-		err = core.GrantRoomPermission(ctx, room.Id, RoleEveryone, PermMessagePost)
-		if err != nil {
-			t.Fatalf("Failed to grant room permission: %v", err)
-		}
-
-		// Deny always wins: instance deny blocks room grant
 		has, err := core.permissionResolver.HasRoomPermission(ctx, member.Id, KindChannel, room.Id, PermMessagePost)
 		if err != nil {
-			t.Fatalf("HasRoomPermission() error = %v", err)
+			t.Fatalf("HasRoomPermission: %v", err)
 		}
 		if has {
-			t.Error("Expected instance deny to block room grant (deny always wins)")
+			t.Error("expected room deny to override server grant for the same role")
 		}
 	})
 
-	t.Run("space deny blocks instance grant", func(t *testing.T) {
-		// Grant at instance level for instance-everyone
-		err := core.GrantInstancePermission(ctx, RoleEveryone, PermDMWrite)
-		if err != nil {
-			t.Fatalf("Failed to grant instance permission: %v", err)
+	t.Run("server grant + server deny on the same role: deny wins (grant probed first, but only one was set)", func(t *testing.T) {
+		// Sanity check on the within-role probe order: Grant and Deny shouldn't
+		// coexist on the same role/scope in practice (GrantInstancePermission
+		// clears any matching deny and vice versa), but cover the rare race.
+		newUser, _ := core.CreateUser(ctx, "system", "graceuser", "Grace", "password123")
+
+		if err := core.GrantInstancePermission(ctx, RoleEveryone, PermDMWrite); err != nil {
+			t.Fatalf("GrantInstancePermission: %v", err)
+		}
+		if err := core.DenyInstancePermission(ctx, RoleEveryone, PermDMWrite); err != nil {
+			t.Fatalf("DenyInstancePermission: %v", err)
 		}
 
-		// Deny at space level via space config for instance-everyone
-		err = core.DenyInstancePermission(ctx, RoleEveryone, PermDMWrite)
-		if err != nil {
-			t.Fatalf("Failed to deny space permission: %v", err)
-		}
-
-		// Create a non-member user to test space.join
-		newUser, _ := core.CreateUser(ctx, "system", "newuser", "New User", "password123")
-
-		// Deny always wins: space deny blocks instance grant
+		// Deny operation clears the prior grant, so only the deny remains in KV.
 		has, err := core.permissionResolver.HasSpacePermission(ctx, newUser.Id, KindChannel, PermDMWrite)
 		if err != nil {
-			t.Fatalf("HasSpacePermission() error = %v", err)
+			t.Fatalf("HasSpacePermission: %v", err)
 		}
 		if has {
-			t.Error("Expected space deny to block instance grant (deny always wins)")
+			t.Error("expected deny on everyone to block dm.write for a user with no higher-ranked role")
 		}
 	})
 }

@@ -408,7 +408,12 @@ func TestInitInstanceDefaults(t *testing.T) {
 
 	// InitInstanceDefaults is called during setupTestCore, so we can verify its effects
 
-	t.Run("admin has all instance permissions", func(t *testing.T) {
+	t.Run("admin has every instance permission", func(t *testing.T) {
+		// Admin gets every server-scope permission enumerated. The
+		// distinction from owner is rank, not capabilities — admins
+		// cannot manage owners (rank check) and cannot revoke their own
+		// role (self-lockout prevention), but the permission grid is
+		// identical to owner.
 		for _, perm := range PermissionsForScope(ScopeServer) {
 			kv := core.storage.serverRBACEngine.KV()
 			key := expectedAllowKey(RoleAdmin, perm.Permission, rbac.ObjectIdAny)
@@ -449,12 +454,39 @@ func TestInitDefaultPermissions(t *testing.T) {
 
 	// InitDefaultPermissions is called at boot, so we can verify its effects here.
 
-	t.Run("owner has every defined permission", func(t *testing.T) {
+	t.Run("owner has every instance permission enumerated", func(t *testing.T) {
+		// Owner gets the full server-scope permission set explicitly —
+		// the same set as admin. No "bypass" super-permission exists.
+		// Operator-configured denies apply uniformly, including to owners,
+		// because the resolver walks roles for owners just like everyone
+		// else.
 		kv := core.storage.serverRBACKV
 		for _, perm := range PermissionsForScope(ScopeServer) {
 			key := expectedAllowKey(RoleOwner, perm.Permission, rbac.ObjectIdAny)
 			if _, err := kv.Get(ctx, key); err != nil {
 				t.Errorf("Expected owner to have permission %s, but key not found", perm.Permission)
+			}
+		}
+	})
+
+	t.Run("owner resolves to allow for every permission via enumerated grants", func(t *testing.T) {
+		// The behavioural contract: a freshly-assigned owner passes
+		// every defined server-scope permission check. The mechanism is
+		// the enumerated grant set on the owner role, not a short-circuit.
+		owner, err := core.CreateUser(ctx, SystemActorID, "enum-owner", "Owner", "password123")
+		if err != nil {
+			t.Fatalf("CreateUser: %v", err)
+		}
+		if err := core.AssignInstanceOwnerRole(ctx, owner.Id); err != nil {
+			t.Fatalf("AssignInstanceOwnerRole: %v", err)
+		}
+		for _, perm := range PermissionsForScope(ScopeServer) {
+			has, err := core.HasInstancePermission(ctx, owner.Id, perm.Permission)
+			if err != nil {
+				t.Fatalf("HasInstancePermission(%s): %v", perm.Permission, err)
+			}
+			if !has {
+				t.Errorf("Expected owner to resolve allow for %s", perm.Permission)
 			}
 		}
 	})
@@ -471,7 +503,7 @@ func TestInitDefaultPermissions(t *testing.T) {
 
 	t.Run("moderator has moderation permissions", func(t *testing.T) {
 		kv := core.storage.serverRBACKV
-		moderatorPerms := []Permission{PermMemberRemove, PermMessageEditAny, PermMessageDeleteAny}
+		moderatorPerms := []Permission{PermMessageEditAny, PermMessageDeleteAny}
 		for _, perm := range moderatorPerms {
 			key := expectedAllowKey("moderator", perm, rbac.ObjectIdAny)
 			if _, err := kv.Get(ctx, key); err != nil {

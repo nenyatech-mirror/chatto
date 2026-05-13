@@ -19,7 +19,6 @@ export type PermissionCategory = string;
 export const CategoryServer: PermissionCategory = "server";
 export const CategoryRoom: PermissionCategory = "room";
 export const CategoryMessage: PermissionCategory = "message";
-export const CategoryMember: PermissionCategory = "member";
 export const CategoryRole: PermissionCategory = "role";
 export const CategoryAdmin: PermissionCategory = "admin";
 export const CategoryDM: PermissionCategory = "dm";
@@ -94,14 +93,6 @@ export const PermMessageReact: Permission = "message.react";
  */
 export const PermMessageEcho: Permission = "message.echo";
 /**
- * PermMemberInvite allows inviting new members.
- */
-export const PermMemberInvite: Permission = "member.invite";
-/**
- * PermMemberRemove allows removing members.
- */
-export const PermMemberRemove: Permission = "member.remove";
-/**
  * PermRoleManage allows creating, editing, deleting, and reordering roles
  * and their permission grants. Single canonical permission for "manage the
  * server's role definitions" (formerly split between role.manage and
@@ -139,9 +130,12 @@ export const PermDMView: Permission = "dm.view";
  */
 export const PermDMWrite: Permission = "dm.write";
 /**
- * PermUserDelete allows deleting user accounts (admin power).
+ * PermUserDeleteAny allows admins to delete any user's account.
+ * Mirrors message.delete-any: the actor needs the permission AND
+ * must strictly outrank the target user (rank check enforced at the
+ * API boundary when the cross-user delete mutation is implemented).
  */
-export const PermUserDelete: Permission = "user.delete";
+export const PermUserDeleteAny: Permission = "user.delete-any";
 /**
  * PermUserDeleteSelf allows users to delete their own account.
  */

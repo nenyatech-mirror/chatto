@@ -71,54 +71,47 @@ func (r *adminQueriesResolver) UserRoles(ctx context.Context, obj *model.AdminQu
 	return r.core.GetUserRoles(ctx, userID)
 }
 
-// UserRoleBasedPermissions is the resolver for the userRoleBasedPermissions field.
-func (r *adminQueriesResolver) UserRoleBasedPermissions(ctx context.Context, obj *model.AdminQueries, userID string) ([]string, error) {
+// UserEffectivePermissions is the resolver for the userEffectivePermissions field.
+func (r *adminQueriesResolver) UserEffectivePermissions(ctx context.Context, obj *model.AdminQueries, userID string) ([]string, error) {
 	caller := auth.ForContext(ctx)
 	if caller == nil {
 		return nil, fmt.Errorf("authentication required")
 	}
 
-	// No additional authorization - admin context already verified by parent resolver
-	// Iterate through all permissions and check which ones the user has via roles
-	allPerms := r.core.AllInstancePermissions()
-	var rolePerms []string
-
-	for _, perm := range allPerms {
-		has, err := r.core.HasUserPermissionViaRoles(ctx, userID, perm)
+	// Iterate through all permissions and bucket them by the unified
+	// resolver's decision. Single source of truth — matches what the
+	// authorizer enforces, including user-level overrides.
+	var allowed []string
+	for _, perm := range r.core.AllInstancePermissions() {
+		decision, err := r.core.ResolveUserPermission(ctx, userID, core.KindChannel, "", perm)
 		if err != nil {
-			return nil, fmt.Errorf("failed to check permission: %w", err)
+			return nil, fmt.Errorf("failed to resolve permission: %w", err)
 		}
-		if has {
-			rolePerms = append(rolePerms, string(perm))
+		if decision == core.DecisionAllow {
+			allowed = append(allowed, string(perm))
 		}
 	}
-
-	return rolePerms, nil
+	return allowed, nil
 }
 
-// UserRoleBasedDenials is the resolver for the userRoleBasedDenials field.
-func (r *adminQueriesResolver) UserRoleBasedDenials(ctx context.Context, obj *model.AdminQueries, userID string) ([]string, error) {
+// UserEffectiveDenials is the resolver for the userEffectiveDenials field.
+func (r *adminQueriesResolver) UserEffectiveDenials(ctx context.Context, obj *model.AdminQueries, userID string) ([]string, error) {
 	caller := auth.ForContext(ctx)
 	if caller == nil {
 		return nil, fmt.Errorf("authentication required")
 	}
 
-	// No additional authorization - admin context already verified by parent resolver
-	// Iterate through all permissions and check which ones are denied via the user's roles
-	allPerms := r.core.AllInstancePermissions()
-	var roleDenials []string
-
-	for _, perm := range allPerms {
-		denied, err := r.core.HasUserPermissionDeniedViaRoles(ctx, userID, perm)
+	var denied []string
+	for _, perm := range r.core.AllInstancePermissions() {
+		decision, err := r.core.ResolveUserPermission(ctx, userID, core.KindChannel, "", perm)
 		if err != nil {
-			return nil, fmt.Errorf("failed to check permission denial: %w", err)
+			return nil, fmt.Errorf("failed to resolve permission: %w", err)
 		}
-		if denied {
-			roleDenials = append(roleDenials, string(perm))
+		if decision == core.DecisionDeny {
+			denied = append(denied, string(perm))
 		}
 	}
-
-	return roleDenials, nil
+	return denied, nil
 }
 
 // GrantPermission is the resolver for the grantPermission field.
@@ -350,16 +343,79 @@ func (r *mutationResolver) ReorderRoles(ctx context.Context, input model.Reorder
 	return result, nil
 }
 
+// GrantUserPermission is the resolver for the grantUserPermission field.
+func (r *mutationResolver) GrantUserPermission(ctx context.Context, input model.GrantUserPermissionInput) (bool, error) {
+	caller, err := requireAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.requireUserPermissionTarget(ctx, caller.Id, input.UserID); err != nil {
+		return false, err
+	}
+	perm := core.Permission(input.Permission)
+	if input.RoomID == nil {
+		if err := r.core.GrantUserPermission(ctx, input.UserID, perm); err != nil {
+			return false, err
+		}
+	} else {
+		if err := r.core.GrantUserRoomPermission(ctx, *input.RoomID, input.UserID, perm); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// DenyUserPermission is the resolver for the denyUserPermission field.
+func (r *mutationResolver) DenyUserPermission(ctx context.Context, input model.DenyUserPermissionInput) (bool, error) {
+	caller, err := requireAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.requireUserPermissionTarget(ctx, caller.Id, input.UserID); err != nil {
+		return false, err
+	}
+	perm := core.Permission(input.Permission)
+	if input.RoomID == nil {
+		if err := r.core.DenyUserPermission(ctx, input.UserID, perm); err != nil {
+			return false, err
+		}
+	} else {
+		if err := r.core.DenyUserRoomPermission(ctx, *input.RoomID, input.UserID, perm); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// ClearUserPermissionState is the resolver for the clearUserPermissionState field.
+func (r *mutationResolver) ClearUserPermissionState(ctx context.Context, input model.ClearUserPermissionStateInput) (bool, error) {
+	caller, err := requireAuth(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.requireUserPermissionTarget(ctx, caller.Id, input.UserID); err != nil {
+		return false, err
+	}
+	perm := core.Permission(input.Permission)
+	if input.RoomID == nil {
+		if err := r.core.ClearUserPermissionState(ctx, input.UserID, perm); err != nil {
+			return false, err
+		}
+	} else {
+		if err := r.core.ClearUserRoomPermissionState(ctx, *input.RoomID, input.UserID, perm); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 // Viewer is the resolver for the viewer field.
 func (r *queryResolver) Viewer(ctx context.Context) (*model.Viewer, error) {
 	user := auth.ForContext(ctx)
 	if user == nil {
 		return nil, nil
 	}
-	return &model.Viewer{
-		UserID:        user.Id,
-		IsConfigOwner: r.isInstanceAdmin0(ctx, user.Id),
-	}, nil
+	return &model.Viewer{UserID: user.Id}, nil
 }
 
 // Permissions is the resolver for the permissions field.
@@ -389,73 +445,46 @@ func (r *viewerResolver) User(ctx context.Context, obj *model.Viewer) (*corev1.U
 
 // CanViewAdmin is the resolver for the canViewAdmin field.
 func (r *viewerResolver) CanViewAdmin(ctx context.Context, obj *model.Viewer) (bool, error) {
-	if obj.IsConfigOwner {
-		return true, nil
-	}
 	return r.core.CanAdminAccess(ctx, obj.UserID)
 }
 
 // CanViewDMs is the resolver for the canViewDMs field.
 func (r *viewerResolver) CanViewDMs(ctx context.Context, obj *model.Viewer) (bool, error) {
-	if obj.IsConfigOwner {
-		return true, nil
-	}
 	return r.core.CanDMView(ctx, obj.UserID)
 }
 
 // CanWriteDMs is the resolver for the canWriteDMs field.
 func (r *viewerResolver) CanWriteDMs(ctx context.Context, obj *model.Viewer) (bool, error) {
-	if obj.IsConfigOwner {
-		return true, nil
-	}
 	return r.core.CanDMWrite(ctx, obj.UserID)
 }
 
 // CanAdminViewUsers is the resolver for the canAdminViewUsers field.
 func (r *viewerResolver) CanAdminViewUsers(ctx context.Context, obj *model.Viewer) (bool, error) {
-	if obj.IsConfigOwner {
-		return true, nil
-	}
 	return r.core.CanAdminUsersView(ctx, obj.UserID)
 }
 
 // CanAdminManageUsers is the resolver for the canAdminManageUsers field.
 func (r *viewerResolver) CanAdminManageUsers(ctx context.Context, obj *model.Viewer) (bool, error) {
-	if obj.IsConfigOwner {
-		return true, nil
-	}
 	return r.core.CanAssignRoles(ctx, obj.UserID)
 }
 
 // CanAdminViewRoles is the resolver for the canAdminViewRoles field.
 func (r *viewerResolver) CanAdminViewRoles(ctx context.Context, obj *model.Viewer) (bool, error) {
-	if obj.IsConfigOwner {
-		return true, nil
-	}
 	return r.core.CanManageRoles(ctx, obj.UserID)
 }
 
 // CanAdminManageRoles is the resolver for the canAdminManageRoles field.
 func (r *viewerResolver) CanAdminManageRoles(ctx context.Context, obj *model.Viewer) (bool, error) {
-	if obj.IsConfigOwner {
-		return true, nil
-	}
 	return r.core.CanManageRoles(ctx, obj.UserID)
 }
 
 // CanAdminViewSystem is the resolver for the canAdminViewSystem field.
 func (r *viewerResolver) CanAdminViewSystem(ctx context.Context, obj *model.Viewer) (bool, error) {
-	if obj.IsConfigOwner {
-		return true, nil
-	}
 	return r.core.CanAdminSystemView(ctx, obj.UserID)
 }
 
 // CanAdminViewAudit is the resolver for the canAdminViewAudit field.
 func (r *viewerResolver) CanAdminViewAudit(ctx context.Context, obj *model.Viewer) (bool, error) {
-	if obj.IsConfigOwner {
-		return true, nil
-	}
 	return r.core.HasInstancePermission(ctx, obj.UserID, core.PermAdminAuditView)
 }
 

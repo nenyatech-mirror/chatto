@@ -17,7 +17,6 @@ import (
 
 // AvatarURL is the resolver for the avatarURL field.
 func (r *userResolver) AvatarURL(ctx context.Context, obj *corev1.User, width *int32, height *int32) (*string, error) {
-	// Convert int32 pointers to int pointers for core function
 	var w, h *int
 	if width != nil && height != nil {
 		wv, hv := int(*width), int(*height)
@@ -27,7 +26,6 @@ func (r *userResolver) AvatarURL(ctx context.Context, obj *corev1.User, width *i
 	if err != nil {
 		return nil, err
 	}
-	// Return nil for empty URL (no avatar set)
 	if url == "" {
 		return nil, nil
 	}
@@ -35,51 +33,30 @@ func (r *userResolver) AvatarURL(ctx context.Context, obj *corev1.User, width *i
 }
 
 // HasVerifiedEmail is the resolver for the hasVerifiedEmail field.
+// Returns whether the user has at least one verified email. Same
+// authorization as VerifiedEmails: self, or `admin.view-users`.
 func (r *userResolver) HasVerifiedEmail(ctx context.Context, obj *corev1.User) (bool, error) {
-	// Get the authenticated user - they're the actor querying this info
-	actor := auth.ForContext(ctx)
-	if actor == nil {
-		// If not authenticated, they can't view verification status
+	if !r.canViewUserEmails(ctx, obj.Id) {
 		return false, nil
 	}
-
-	// Authorization: self or instance admin
-	if actor.Id != obj.Id {
-		isAdmin, err := r.isInstanceAdmin(ctx, actor.Id)
-		if err != nil {
-			return false, nil // Silently return false if we can't check
-		}
-		if !isAdmin {
-			return false, nil // Can only check own verified email status
-		}
-	}
-
 	return r.core.HasVerifiedEmail(ctx, obj.Id)
 }
 
 // VerifiedEmails is the resolver for the verifiedEmails field.
-// Only the user themselves or users with admin.users.view permission can view verified emails.
+//
+// Email addresses are operationally sensitive — leaking them broadens
+// the phishing/social-engineering surface. Access is gated on the
+// `admin.view-users` permission (the same permission required to load
+// the admin users page) with a self-access exception so a user can
+// always view their own verified emails. Owner/admin roles pass the
+// permission check by default; custom roles get access only if the
+// permission is explicitly granted.
+//
+// Unauthorized callers get an empty list rather than an error to keep
+// the existence of the field uninformative.
 func (r *userResolver) VerifiedEmails(ctx context.Context, obj *corev1.User) ([]string, error) {
-	// Check if requester is self or has admin.users.view permission
-	actor, _ := requireAuth(ctx)
-	if actor == nil || actor.Id != obj.Id {
-		// Check if user has admin.users.view permission (config-based OR RBAC)
-		canView := false
-		if actor != nil {
-			// Check config-based admin (via verified emails) - they have all permissions
-			canView = r.isInstanceAdmin0(ctx, actor.Id)
-			if !canView {
-				// Check admin.users.view permission via RBAC
-				var err error
-				canView, err = r.core.CanAdminUsersView(ctx, actor.Id)
-				if err != nil {
-					return []string{}, nil
-				}
-			}
-		}
-		if !canView {
-			return []string{}, nil // Return empty for unauthorized viewers
-		}
+	if !r.canViewUserEmails(ctx, obj.Id) {
+		return []string{}, nil
 	}
 
 	emails, err := r.core.GetVerifiedEmails(ctx, obj.Id)
@@ -87,11 +64,11 @@ func (r *userResolver) VerifiedEmails(ctx context.Context, obj *corev1.User) ([]
 		return nil, err
 	}
 
-	result := make([]string, len(emails))
+	out := make([]string, len(emails))
 	for i, e := range emails {
-		result[i] = e.Email
+		out[i] = e.Email
 	}
-	return result, nil
+	return out, nil
 }
 
 // Rooms is the resolver for the rooms field.
@@ -135,12 +112,30 @@ func (r *userResolver) Roles(ctx context.Context, obj *corev1.User) ([]string, e
 }
 
 // ViewerCanDeleteAccount is the resolver for the viewerCanDeleteAccount field.
+//
+// For cross-user delete this combines the permission check (`user.delete-any`)
+// with the rank invariant (actor must strictly outrank target) — the same
+// two-step shape applied to identity edits and message moderation. Without
+// the rank check the field would tell the frontend that a peer-or-higher
+// admin can be deleted by another admin, which the mutation path itself
+// must (and would) reject. Keeping the hint accurate avoids dead UI
+// affordances and avoids implying the rank check is optional.
+//
+// Self-delete is privilege-neutral and goes through `user.delete-self`
+// alone; no rank check.
 func (r *userResolver) ViewerCanDeleteAccount(ctx context.Context, obj *corev1.User) (bool, error) {
 	caller := auth.ForContext(ctx)
 	if caller == nil {
 		return false, nil
 	}
-	return r.core.CanDeleteUser(ctx, caller.Id, obj.Id)
+	can, err := r.core.CanDeleteUser(ctx, caller.Id, obj.Id)
+	if err != nil || !can {
+		return false, err
+	}
+	if caller.Id == obj.Id {
+		return true, nil
+	}
+	return r.core.OutranksUser(ctx, caller.Id, obj.Id)
 }
 
 // LastLoginChange is the resolver for the lastLoginChange field.

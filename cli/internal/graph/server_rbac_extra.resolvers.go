@@ -123,11 +123,18 @@ func (r *roomResolver) AvailableRoomPermissions(ctx context.Context, obj *corev1
 	return result, nil
 }
 
-// Roles is the resolver for the roles field.
+// Roles is the resolver for the roles field. Returns the server's role
+// catalog — name, display name, position, and permission grants/denials
+// per role. Available to any authenticated user.
+//
+// What's NOT exposed here is the per-user roster ("who has the admin
+// role") — see Server.roleUsers and Server.userEffectivePermissions for
+// that, both of which are gated. Knowing that "the admin role grants
+// user.delete" is operational config; knowing "alice is an admin" is
+// the sensitive part.
 func (r *serverResolver) Roles(ctx context.Context, obj *model.Server) ([]*core.RoleWithPermissions, error) {
-	user := auth.ForContext(ctx)
-	if user == nil {
-		return nil, fmt.Errorf("authentication required")
+	if _, err := requireAuth(ctx); err != nil {
+		return nil, err
 	}
 
 	roles, err := r.core.ListServerRoles(ctx)
@@ -141,11 +148,11 @@ func (r *serverResolver) Roles(ctx context.Context, obj *model.Server) ([]*core.
 	return out, nil
 }
 
-// Role is the resolver for the role field.
+// Role is the resolver for the role field. Available to any
+// authenticated user — see Server.roles for the rationale.
 func (r *serverResolver) Role(ctx context.Context, obj *model.Server, name string) (*core.RoleWithPermissions, error) {
-	user := auth.ForContext(ctx)
-	if user == nil {
-		return nil, fmt.Errorf("authentication required")
+	if _, err := requireAuth(ctx); err != nil {
+		return nil, err
 	}
 
 	role, err := r.core.GetServerRole(ctx, name)
@@ -204,6 +211,12 @@ func (r *serverResolver) ViewerCanAssignRoles(ctx context.Context, obj *model.Se
 }
 
 // ViewerCanManageUser is the resolver for the viewerCanManageUser field.
+//
+// IMPORTANT: this is a UI hint, not an authorization gate. It answers
+// "does the viewer outrank the target by role hierarchy?" — nothing
+// more. Callers (frontend) must understand that hiding a control
+// based on this field is fine; granting a capability based on it is
+// not. See the schema doc and authorization.md.
 func (r *serverResolver) ViewerCanManageUser(ctx context.Context, obj *model.Server, userID string) (bool, error) {
 	user := auth.ForContext(ctx)
 	if user == nil {
@@ -212,14 +225,17 @@ func (r *serverResolver) ViewerCanManageUser(ctx context.Context, obj *model.Ser
 	if user.Id == userID {
 		return false, nil
 	}
-	return r.core.CanManageUser(ctx, user.Id, userID)
+	return r.core.OutranksUser(ctx, user.Id, userID)
 }
 
 // RoleUsers is the resolver for the roleUsers field.
+//
+// Role rosters expose operationally-sensitive information (who's a server
+// admin, etc.) and are gated on `role.assign` — the same permission required
+// to manage role assignments. Returns nil for unauthorized callers.
 func (r *serverResolver) RoleUsers(ctx context.Context, obj *model.Server, roleName string) ([]*corev1.User, error) {
-	user := auth.ForContext(ctx)
-	if user == nil {
-		return nil, fmt.Errorf("authentication required")
+	if err := r.Resolver.requireRoleRosterAccess(ctx); err != nil {
+		return nil, err
 	}
 
 	userIDs, err := r.core.GetRoleUsers(ctx, roleName)
@@ -239,50 +255,43 @@ func (r *serverResolver) RoleUsers(ctx context.Context, obj *model.Server, roleN
 	return users, nil
 }
 
-// UserRoleBasedPermissions is the resolver for the userRoleBasedPermissions field.
-func (r *serverResolver) UserRoleBasedPermissions(ctx context.Context, obj *model.Server, userID string) ([]string, error) {
-	user := auth.ForContext(ctx)
-	if user == nil {
-		return nil, fmt.Errorf("authentication required")
+// UserEffectivePermissions is the resolver for the userEffectivePermissions
+// field. Reveals which permissions any given user effectively holds —
+// combining role-based grants with user-level overrides. Useful for the
+// admin inspector UI, but operationally sensitive (lets a caller enumerate
+// other users' privileges). Gated on `role.assign`.
+func (r *serverResolver) UserEffectivePermissions(ctx context.Context, obj *model.Server, userID string) ([]string, error) {
+	if err := r.Resolver.requireRoleRosterAccess(ctx); err != nil {
+		return nil, err
 	}
-	kind := core.KindChannel
-
-	allPerms := core.PermissionsForScope(core.ScopeServer)
-	var rolePerms []string
-
-	for _, permDef := range allPerms {
-		has, err := r.core.HasSpaceUserPermissionViaRoles(ctx, kind, userID, core.Permission(permDef.Permission))
+	var allowed []string
+	for _, permDef := range core.PermissionsForScope(core.ScopeServer) {
+		decision, err := r.core.ResolveUserPermission(ctx, userID, core.KindChannel, "", core.Permission(permDef.Permission))
 		if err != nil {
 			return nil, err
 		}
-		if has {
-			rolePerms = append(rolePerms, string(permDef.Permission))
+		if decision == core.DecisionAllow {
+			allowed = append(allowed, string(permDef.Permission))
 		}
 	}
-
-	return rolePerms, nil
+	return allowed, nil
 }
 
-// UserRoleBasedDenials is the resolver for the userRoleBasedDenials field.
-func (r *serverResolver) UserRoleBasedDenials(ctx context.Context, obj *model.Server, userID string) ([]string, error) {
-	user := auth.ForContext(ctx)
-	if user == nil {
-		return nil, fmt.Errorf("authentication required")
+// UserEffectiveDenials is the resolver for the userEffectiveDenials field.
+// Same gate as UserEffectivePermissions — see that resolver's comment.
+func (r *serverResolver) UserEffectiveDenials(ctx context.Context, obj *model.Server, userID string) ([]string, error) {
+	if err := r.Resolver.requireRoleRosterAccess(ctx); err != nil {
+		return nil, err
 	}
-	kind := core.KindChannel
-
-	allPerms := core.PermissionsForScope(core.ScopeServer)
-	var roleDenials []string
-
-	for _, permDef := range allPerms {
-		denied, err := r.core.HasSpaceUserPermissionDeniedViaRoles(ctx, kind, userID, core.Permission(permDef.Permission))
+	var denied []string
+	for _, permDef := range core.PermissionsForScope(core.ScopeServer) {
+		decision, err := r.core.ResolveUserPermission(ctx, userID, core.KindChannel, "", core.Permission(permDef.Permission))
 		if err != nil {
 			return nil, err
 		}
-		if denied {
-			roleDenials = append(roleDenials, string(permDef.Permission))
+		if decision == core.DecisionDeny {
+			denied = append(denied, string(permDef.Permission))
 		}
 	}
-
-	return roleDenials, nil
+	return denied, nil
 }

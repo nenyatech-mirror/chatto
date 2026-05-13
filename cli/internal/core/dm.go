@@ -71,29 +71,6 @@ func SpaceIDForKind(kind RoomKind) string {
 	return ServerSpaceID
 }
 
-// isDMPermissionAllowed returns whether a permission is allowed in the DM space.
-// The DM space has no roles - permissions are granted implicitly based on room membership.
-// Room membership is verified separately by the GraphQL resolver.
-//
-// Allowed permissions (granted to all DM room members):
-//   - PermRoomJoin: join DM rooms (needed for FindOrCreateDM)
-//   - PermMessageReply: use reply attribution (inReplyTo) on messages
-//
-// Denied permissions (no one can do these in DMs):
-//   - PermServerManage: server settings are server-scope, not DM-scope
-//   - PermRoleManage, PermRoleAssign: no roles in DM space
-//   - PermRoomList: DM room listing uses separate API (ListDMConversations)
-//   - PermRoomCreate, PermRoomManage: DM rooms managed via FindOrCreateDM
-//   - PermMemberInvite, PermMemberRemove: handled via DM-specific APIs
-func isDMPermissionAllowed(perm Permission) bool {
-	switch perm {
-	case PermRoomJoin, PermMessageReply:
-		return true
-	default:
-		return false
-	}
-}
-
 // DMRoomID generates a deterministic room ID from participant IDs.
 // The same set of participants always produces the same room ID,
 // regardless of order. This enables find-or-create semantics without

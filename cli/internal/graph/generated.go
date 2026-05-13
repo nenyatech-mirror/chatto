@@ -108,8 +108,8 @@ type ComplexityRoot struct {
 		ServerConfig             func(childComplexity int) int
 		ServerPermissions        func(childComplexity int) int
 		SystemInfo               func(childComplexity int) int
-		UserRoleBasedDenials     func(childComplexity int, userID string) int
-		UserRoleBasedPermissions func(childComplexity int, userID string) int
+		UserEffectiveDenials     func(childComplexity int, userID string) int
+		UserEffectivePermissions func(childComplexity int, userID string) int
 		UserRoles                func(childComplexity int, userID string) int
 	}
 
@@ -253,6 +253,7 @@ type ComplexityRoot struct {
 		AssignRole                 func(childComplexity int, input model.AssignRoleInput) int
 		ClearPermissionState       func(childComplexity int, input model.ClearPermissionStateInput) int
 		ClearRoomPermission        func(childComplexity int, input model.ClearRoomPermissionInput) int
+		ClearUserPermissionState   func(childComplexity int, input model.ClearUserPermissionStateInput) int
 		CreateRole                 func(childComplexity int, input model.CreateRoleInput) int
 		CreateRoom                 func(childComplexity int, input model.CreateRoomInput) int
 		DeleteAttachment           func(childComplexity int, input model.DeleteAttachmentInput) int
@@ -265,12 +266,14 @@ type ComplexityRoot struct {
 		DeleteServerLogo           func(childComplexity int) int
 		DenyPermission             func(childComplexity int, input model.DenyPermissionInput) int
 		DenyRoomPermission         func(childComplexity int, input model.DenyRoomPermissionInput) int
+		DenyUserPermission         func(childComplexity int, input model.DenyUserPermissionInput) int
 		DismissAllNotifications    func(childComplexity int) int
 		DismissNotification        func(childComplexity int, input model.DismissNotificationInput) int
 		EditMessage                func(childComplexity int, input model.EditMessageInput) int
 		FollowThread               func(childComplexity int, input model.FollowThreadInput) int
 		GrantPermission            func(childComplexity int, input model.GrantPermissionInput) int
 		GrantRoomPermission        func(childComplexity int, input model.GrantRoomPermissionInput) int
+		GrantUserPermission        func(childComplexity int, input model.GrantUserPermissionInput) int
 		JoinRoom                   func(childComplexity int, input model.JoinRoomInput) int
 		LeaveRoom                  func(childComplexity int, input model.LeaveRoomInput) int
 		MarkRoomAsRead             func(childComplexity int, input model.MarkRoomAsReadInput) int
@@ -555,14 +558,13 @@ type ComplexityRoot struct {
 		RoomCount                    func(childComplexity int) int
 		RoomLayout                   func(childComplexity int) int
 		Rooms                        func(childComplexity int, typeArg *model.RoomType) int
-		UserRoleBasedDenials         func(childComplexity int, userID string) int
-		UserRoleBasedPermissions     func(childComplexity int, userID string) int
+		UserEffectiveDenials         func(childComplexity int, userID string) int
+		UserEffectivePermissions     func(childComplexity int, userID string) int
 		VapidPublicKey               func(childComplexity int) int
 		Version                      func(childComplexity int) int
 		ViewerCanAssignRoles         func(childComplexity int) int
 		ViewerCanBrowseRooms         func(childComplexity int) int
 		ViewerCanCreateRoom          func(childComplexity int) int
-		ViewerCanInviteMembers       func(childComplexity int) int
 		ViewerCanManageInstance      func(childComplexity int) int
 		ViewerCanManageRoles         func(childComplexity int) int
 		ViewerCanManageRooms         func(childComplexity int) int
@@ -782,8 +784,8 @@ type AdminQueriesResolver interface {
 
 	RoleUsers(ctx context.Context, obj *model.AdminQueries, roleName string) ([]*corev1.User, error)
 	UserRoles(ctx context.Context, obj *model.AdminQueries, userID string) ([]string, error)
-	UserRoleBasedPermissions(ctx context.Context, obj *model.AdminQueries, userID string) ([]string, error)
-	UserRoleBasedDenials(ctx context.Context, obj *model.AdminQueries, userID string) ([]string, error)
+	UserEffectivePermissions(ctx context.Context, obj *model.AdminQueries, userID string) ([]string, error)
+	UserEffectiveDenials(ctx context.Context, obj *model.AdminQueries, userID string) ([]string, error)
 }
 type AttachmentResolver interface {
 	Size(ctx context.Context, obj *corev1.Attachment) (int32, error)
@@ -890,6 +892,9 @@ type MutationResolver interface {
 	AssignRole(ctx context.Context, input model.AssignRoleInput) (bool, error)
 	RevokeRole(ctx context.Context, input model.RevokeRoleInput) (bool, error)
 	ReorderRoles(ctx context.Context, input model.ReorderRolesInput) ([]*core.RoleWithPermissions, error)
+	GrantUserPermission(ctx context.Context, input model.GrantUserPermissionInput) (bool, error)
+	DenyUserPermission(ctx context.Context, input model.DenyUserPermissionInput) (bool, error)
+	ClearUserPermissionState(ctx context.Context, input model.ClearUserPermissionStateInput) (bool, error)
 	GrantRoomPermission(ctx context.Context, input model.GrantRoomPermissionInput) (bool, error)
 	DenyRoomPermission(ctx context.Context, input model.DenyRoomPermissionInput) (bool, error)
 	ClearRoomPermission(ctx context.Context, input model.ClearRoomPermissionInput) (bool, error)
@@ -995,7 +1000,6 @@ type ServerResolver interface {
 	ViewerCanBrowseRooms(ctx context.Context, obj *model.Server) (bool, error)
 	ViewerCanCreateRoom(ctx context.Context, obj *model.Server) (bool, error)
 	ViewerCanManageRooms(ctx context.Context, obj *model.Server) (bool, error)
-	ViewerCanInviteMembers(ctx context.Context, obj *model.Server) (bool, error)
 	ViewerHasUnreadRooms(ctx context.Context, obj *model.Server) (bool, error)
 	ViewerNotificationPreference(ctx context.Context, obj *model.Server) (*model.ViewerNotificationPreference, error)
 	Member(ctx context.Context, obj *model.Server, userID string) (*corev1.User, error)
@@ -1008,8 +1012,8 @@ type ServerResolver interface {
 	ViewerCanAssignRoles(ctx context.Context, obj *model.Server) (bool, error)
 	ViewerCanManageUser(ctx context.Context, obj *model.Server, userID string) (bool, error)
 	RoleUsers(ctx context.Context, obj *model.Server, roleName string) ([]*corev1.User, error)
-	UserRoleBasedPermissions(ctx context.Context, obj *model.Server, userID string) ([]string, error)
-	UserRoleBasedDenials(ctx context.Context, obj *model.Server, userID string) ([]string, error)
+	UserEffectivePermissions(ctx context.Context, obj *model.Server, userID string) ([]string, error)
+	UserEffectiveDenials(ctx context.Context, obj *model.Server, userID string) ([]string, error)
 }
 type ServerConfigResolver interface {
 	ServerName(ctx context.Context, obj *model.ServerConfig) (string, error)
@@ -1221,28 +1225,28 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.AdminQueries.SystemInfo(childComplexity), true
-	case "AdminQueries.userRoleBasedDenials":
-		if e.complexity.AdminQueries.UserRoleBasedDenials == nil {
+	case "AdminQueries.userEffectiveDenials":
+		if e.complexity.AdminQueries.UserEffectiveDenials == nil {
 			break
 		}
 
-		args, err := ec.field_AdminQueries_userRoleBasedDenials_args(ctx, rawArgs)
+		args, err := ec.field_AdminQueries_userEffectiveDenials_args(ctx, rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.AdminQueries.UserRoleBasedDenials(childComplexity, args["userId"].(string)), true
-	case "AdminQueries.userRoleBasedPermissions":
-		if e.complexity.AdminQueries.UserRoleBasedPermissions == nil {
+		return e.complexity.AdminQueries.UserEffectiveDenials(childComplexity, args["userId"].(string)), true
+	case "AdminQueries.userEffectivePermissions":
+		if e.complexity.AdminQueries.UserEffectivePermissions == nil {
 			break
 		}
 
-		args, err := ec.field_AdminQueries_userRoleBasedPermissions_args(ctx, rawArgs)
+		args, err := ec.field_AdminQueries_userEffectivePermissions_args(ctx, rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.AdminQueries.UserRoleBasedPermissions(childComplexity, args["userId"].(string)), true
+		return e.complexity.AdminQueries.UserEffectivePermissions(childComplexity, args["userId"].(string)), true
 	case "AdminQueries.userRoles":
 		if e.complexity.AdminQueries.UserRoles == nil {
 			break
@@ -1850,6 +1854,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.ClearRoomPermission(childComplexity, args["input"].(model.ClearRoomPermissionInput)), true
+	case "Mutation.clearUserPermissionState":
+		if e.complexity.Mutation.ClearUserPermissionState == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_clearUserPermissionState_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.ClearUserPermissionState(childComplexity, args["input"].(model.ClearUserPermissionStateInput)), true
 	case "Mutation.createRole":
 		if e.complexity.Mutation.CreateRole == nil {
 			break
@@ -1972,6 +1987,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.DenyRoomPermission(childComplexity, args["input"].(model.DenyRoomPermissionInput)), true
+	case "Mutation.denyUserPermission":
+		if e.complexity.Mutation.DenyUserPermission == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_denyUserPermission_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.DenyUserPermission(childComplexity, args["input"].(model.DenyUserPermissionInput)), true
 	case "Mutation.dismissAllNotifications":
 		if e.complexity.Mutation.DismissAllNotifications == nil {
 			break
@@ -2033,6 +2059,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Mutation.GrantRoomPermission(childComplexity, args["input"].(model.GrantRoomPermissionInput)), true
+	case "Mutation.grantUserPermission":
+		if e.complexity.Mutation.GrantUserPermission == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_grantUserPermission_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Mutation.GrantUserPermission(childComplexity, args["input"].(model.GrantUserPermissionInput)), true
 	case "Mutation.joinRoom":
 		if e.complexity.Mutation.JoinRoom == nil {
 			break
@@ -3425,28 +3462,28 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Server.Rooms(childComplexity, args["type"].(*model.RoomType)), true
-	case "Server.userRoleBasedDenials":
-		if e.complexity.Server.UserRoleBasedDenials == nil {
+	case "Server.userEffectiveDenials":
+		if e.complexity.Server.UserEffectiveDenials == nil {
 			break
 		}
 
-		args, err := ec.field_Server_userRoleBasedDenials_args(ctx, rawArgs)
+		args, err := ec.field_Server_userEffectiveDenials_args(ctx, rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Server.UserRoleBasedDenials(childComplexity, args["userId"].(string)), true
-	case "Server.userRoleBasedPermissions":
-		if e.complexity.Server.UserRoleBasedPermissions == nil {
+		return e.complexity.Server.UserEffectiveDenials(childComplexity, args["userId"].(string)), true
+	case "Server.userEffectivePermissions":
+		if e.complexity.Server.UserEffectivePermissions == nil {
 			break
 		}
 
-		args, err := ec.field_Server_userRoleBasedPermissions_args(ctx, rawArgs)
+		args, err := ec.field_Server_userEffectivePermissions_args(ctx, rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Server.UserRoleBasedPermissions(childComplexity, args["userId"].(string)), true
+		return e.complexity.Server.UserEffectivePermissions(childComplexity, args["userId"].(string)), true
 	case "Server.vapidPublicKey":
 		if e.complexity.Server.VapidPublicKey == nil {
 			break
@@ -3477,12 +3514,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Server.ViewerCanCreateRoom(childComplexity), true
-	case "Server.viewerCanInviteMembers":
-		if e.complexity.Server.ViewerCanInviteMembers == nil {
-			break
-		}
-
-		return e.complexity.Server.ViewerCanInviteMembers(childComplexity), true
 	case "Server.viewerCanManageInstance":
 		if e.complexity.Server.ViewerCanManageInstance == nil {
 			break
@@ -4248,6 +4279,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputAssignRoleInput,
 		ec.unmarshalInputClearPermissionStateInput,
 		ec.unmarshalInputClearRoomPermissionInput,
+		ec.unmarshalInputClearUserPermissionStateInput,
 		ec.unmarshalInputCreateRoleInput,
 		ec.unmarshalInputCreateRoomInput,
 		ec.unmarshalInputDeleteAttachmentInput,
@@ -4257,11 +4289,13 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputDeleteRoleInput,
 		ec.unmarshalInputDenyPermissionInput,
 		ec.unmarshalInputDenyRoomPermissionInput,
+		ec.unmarshalInputDenyUserPermissionInput,
 		ec.unmarshalInputDismissNotificationInput,
 		ec.unmarshalInputEditMessageInput,
 		ec.unmarshalInputFollowThreadInput,
 		ec.unmarshalInputGrantPermissionInput,
 		ec.unmarshalInputGrantRoomPermissionInput,
+		ec.unmarshalInputGrantUserPermissionInput,
 		ec.unmarshalInputJoinRoomInput,
 		ec.unmarshalInputLeaveRoomInput,
 		ec.unmarshalInputLinkPreviewInput,
@@ -4504,7 +4538,7 @@ func (ec *executionContext) field_AdminQueries_role_args(ctx context.Context, ra
 	return args, nil
 }
 
-func (ec *executionContext) field_AdminQueries_userRoleBasedDenials_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_AdminQueries_userEffectiveDenials_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "userId", ec.unmarshalNID2string)
@@ -4515,7 +4549,7 @@ func (ec *executionContext) field_AdminQueries_userRoleBasedDenials_args(ctx con
 	return args, nil
 }
 
-func (ec *executionContext) field_AdminQueries_userRoleBasedPermissions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_AdminQueries_userEffectivePermissions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "userId", ec.unmarshalNID2string)
@@ -4677,6 +4711,17 @@ func (ec *executionContext) field_Mutation_clearRoomPermission_args(ctx context.
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_clearUserPermissionState_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNClearUserPermissionStateInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐClearUserPermissionStateInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_createRole_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -4787,6 +4832,17 @@ func (ec *executionContext) field_Mutation_denyRoomPermission_args(ctx context.C
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_denyUserPermission_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNDenyUserPermissionInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐDenyUserPermissionInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_dismissNotification_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -4835,6 +4891,17 @@ func (ec *executionContext) field_Mutation_grantRoomPermission_args(ctx context.
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNGrantRoomPermissionInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐGrantRoomPermissionInput)
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_grantUserPermission_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input", ec.unmarshalNGrantUserPermissionInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐGrantUserPermissionInput)
 	if err != nil {
 		return nil, err
 	}
@@ -5393,7 +5460,7 @@ func (ec *executionContext) field_Server_rooms_args(ctx context.Context, rawArgs
 	return args, nil
 }
 
-func (ec *executionContext) field_Server_userRoleBasedDenials_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_Server_userEffectiveDenials_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "userId", ec.unmarshalNID2string)
@@ -5404,7 +5471,7 @@ func (ec *executionContext) field_Server_userRoleBasedDenials_args(ctx context.C
 	return args, nil
 }
 
-func (ec *executionContext) field_Server_userRoleBasedPermissions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_Server_userEffectivePermissions_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "userId", ec.unmarshalNID2string)
@@ -6256,15 +6323,15 @@ func (ec *executionContext) fieldContext_AdminQueries_userRoles(ctx context.Cont
 	return fc, nil
 }
 
-func (ec *executionContext) _AdminQueries_userRoleBasedPermissions(ctx context.Context, field graphql.CollectedField, obj *model.AdminQueries) (ret graphql.Marshaler) {
+func (ec *executionContext) _AdminQueries_userEffectivePermissions(ctx context.Context, field graphql.CollectedField, obj *model.AdminQueries) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
-		ec.fieldContext_AdminQueries_userRoleBasedPermissions,
+		ec.fieldContext_AdminQueries_userEffectivePermissions,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.AdminQueries().UserRoleBasedPermissions(ctx, obj, fc.Args["userId"].(string))
+			return ec.resolvers.AdminQueries().UserEffectivePermissions(ctx, obj, fc.Args["userId"].(string))
 		},
 		nil,
 		ec.marshalNString2ᚕstringᚄ,
@@ -6273,7 +6340,7 @@ func (ec *executionContext) _AdminQueries_userRoleBasedPermissions(ctx context.C
 	)
 }
 
-func (ec *executionContext) fieldContext_AdminQueries_userRoleBasedPermissions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_AdminQueries_userEffectivePermissions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AdminQueries",
 		Field:      field,
@@ -6290,22 +6357,22 @@ func (ec *executionContext) fieldContext_AdminQueries_userRoleBasedPermissions(c
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_AdminQueries_userRoleBasedPermissions_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_AdminQueries_userEffectivePermissions_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
 	return fc, nil
 }
 
-func (ec *executionContext) _AdminQueries_userRoleBasedDenials(ctx context.Context, field graphql.CollectedField, obj *model.AdminQueries) (ret graphql.Marshaler) {
+func (ec *executionContext) _AdminQueries_userEffectiveDenials(ctx context.Context, field graphql.CollectedField, obj *model.AdminQueries) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
-		ec.fieldContext_AdminQueries_userRoleBasedDenials,
+		ec.fieldContext_AdminQueries_userEffectiveDenials,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.AdminQueries().UserRoleBasedDenials(ctx, obj, fc.Args["userId"].(string))
+			return ec.resolvers.AdminQueries().UserEffectiveDenials(ctx, obj, fc.Args["userId"].(string))
 		},
 		nil,
 		ec.marshalNString2ᚕstringᚄ,
@@ -6314,7 +6381,7 @@ func (ec *executionContext) _AdminQueries_userRoleBasedDenials(ctx context.Conte
 	)
 }
 
-func (ec *executionContext) fieldContext_AdminQueries_userRoleBasedDenials(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_AdminQueries_userEffectiveDenials(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AdminQueries",
 		Field:      field,
@@ -6331,7 +6398,7 @@ func (ec *executionContext) fieldContext_AdminQueries_userRoleBasedDenials(ctx c
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_AdminQueries_userRoleBasedDenials_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_AdminQueries_userEffectiveDenials_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -9902,8 +9969,6 @@ func (ec *executionContext) fieldContext_Mutation_updateServer(ctx context.Conte
 				return ec.fieldContext_Server_viewerCanCreateRoom(ctx, field)
 			case "viewerCanManageRooms":
 				return ec.fieldContext_Server_viewerCanManageRooms(ctx, field)
-			case "viewerCanInviteMembers":
-				return ec.fieldContext_Server_viewerCanInviteMembers(ctx, field)
 			case "viewerHasUnreadRooms":
 				return ec.fieldContext_Server_viewerHasUnreadRooms(ctx, field)
 			case "viewerNotificationPreference":
@@ -9928,10 +9993,10 @@ func (ec *executionContext) fieldContext_Mutation_updateServer(ctx context.Conte
 				return ec.fieldContext_Server_viewerCanManageUser(ctx, field)
 			case "roleUsers":
 				return ec.fieldContext_Server_roleUsers(ctx, field)
-			case "userRoleBasedPermissions":
-				return ec.fieldContext_Server_userRoleBasedPermissions(ctx, field)
-			case "userRoleBasedDenials":
-				return ec.fieldContext_Server_userRoleBasedDenials(ctx, field)
+			case "userEffectivePermissions":
+				return ec.fieldContext_Server_userEffectivePermissions(ctx, field)
+			case "userEffectiveDenials":
+				return ec.fieldContext_Server_userEffectiveDenials(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Server", field.Name)
 		},
@@ -10015,8 +10080,6 @@ func (ec *executionContext) fieldContext_Mutation_uploadServerLogo(ctx context.C
 				return ec.fieldContext_Server_viewerCanCreateRoom(ctx, field)
 			case "viewerCanManageRooms":
 				return ec.fieldContext_Server_viewerCanManageRooms(ctx, field)
-			case "viewerCanInviteMembers":
-				return ec.fieldContext_Server_viewerCanInviteMembers(ctx, field)
 			case "viewerHasUnreadRooms":
 				return ec.fieldContext_Server_viewerHasUnreadRooms(ctx, field)
 			case "viewerNotificationPreference":
@@ -10041,10 +10104,10 @@ func (ec *executionContext) fieldContext_Mutation_uploadServerLogo(ctx context.C
 				return ec.fieldContext_Server_viewerCanManageUser(ctx, field)
 			case "roleUsers":
 				return ec.fieldContext_Server_roleUsers(ctx, field)
-			case "userRoleBasedPermissions":
-				return ec.fieldContext_Server_userRoleBasedPermissions(ctx, field)
-			case "userRoleBasedDenials":
-				return ec.fieldContext_Server_userRoleBasedDenials(ctx, field)
+			case "userEffectivePermissions":
+				return ec.fieldContext_Server_userEffectivePermissions(ctx, field)
+			case "userEffectiveDenials":
+				return ec.fieldContext_Server_userEffectiveDenials(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Server", field.Name)
 		},
@@ -10127,8 +10190,6 @@ func (ec *executionContext) fieldContext_Mutation_deleteServerLogo(_ context.Con
 				return ec.fieldContext_Server_viewerCanCreateRoom(ctx, field)
 			case "viewerCanManageRooms":
 				return ec.fieldContext_Server_viewerCanManageRooms(ctx, field)
-			case "viewerCanInviteMembers":
-				return ec.fieldContext_Server_viewerCanInviteMembers(ctx, field)
 			case "viewerHasUnreadRooms":
 				return ec.fieldContext_Server_viewerHasUnreadRooms(ctx, field)
 			case "viewerNotificationPreference":
@@ -10153,10 +10214,10 @@ func (ec *executionContext) fieldContext_Mutation_deleteServerLogo(_ context.Con
 				return ec.fieldContext_Server_viewerCanManageUser(ctx, field)
 			case "roleUsers":
 				return ec.fieldContext_Server_roleUsers(ctx, field)
-			case "userRoleBasedPermissions":
-				return ec.fieldContext_Server_userRoleBasedPermissions(ctx, field)
-			case "userRoleBasedDenials":
-				return ec.fieldContext_Server_userRoleBasedDenials(ctx, field)
+			case "userEffectivePermissions":
+				return ec.fieldContext_Server_userEffectivePermissions(ctx, field)
+			case "userEffectiveDenials":
+				return ec.fieldContext_Server_userEffectiveDenials(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Server", field.Name)
 		},
@@ -10229,8 +10290,6 @@ func (ec *executionContext) fieldContext_Mutation_uploadServerBanner(ctx context
 				return ec.fieldContext_Server_viewerCanCreateRoom(ctx, field)
 			case "viewerCanManageRooms":
 				return ec.fieldContext_Server_viewerCanManageRooms(ctx, field)
-			case "viewerCanInviteMembers":
-				return ec.fieldContext_Server_viewerCanInviteMembers(ctx, field)
 			case "viewerHasUnreadRooms":
 				return ec.fieldContext_Server_viewerHasUnreadRooms(ctx, field)
 			case "viewerNotificationPreference":
@@ -10255,10 +10314,10 @@ func (ec *executionContext) fieldContext_Mutation_uploadServerBanner(ctx context
 				return ec.fieldContext_Server_viewerCanManageUser(ctx, field)
 			case "roleUsers":
 				return ec.fieldContext_Server_roleUsers(ctx, field)
-			case "userRoleBasedPermissions":
-				return ec.fieldContext_Server_userRoleBasedPermissions(ctx, field)
-			case "userRoleBasedDenials":
-				return ec.fieldContext_Server_userRoleBasedDenials(ctx, field)
+			case "userEffectivePermissions":
+				return ec.fieldContext_Server_userEffectivePermissions(ctx, field)
+			case "userEffectiveDenials":
+				return ec.fieldContext_Server_userEffectiveDenials(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Server", field.Name)
 		},
@@ -10341,8 +10400,6 @@ func (ec *executionContext) fieldContext_Mutation_deleteServerBanner(_ context.C
 				return ec.fieldContext_Server_viewerCanCreateRoom(ctx, field)
 			case "viewerCanManageRooms":
 				return ec.fieldContext_Server_viewerCanManageRooms(ctx, field)
-			case "viewerCanInviteMembers":
-				return ec.fieldContext_Server_viewerCanInviteMembers(ctx, field)
 			case "viewerHasUnreadRooms":
 				return ec.fieldContext_Server_viewerHasUnreadRooms(ctx, field)
 			case "viewerNotificationPreference":
@@ -10367,10 +10424,10 @@ func (ec *executionContext) fieldContext_Mutation_deleteServerBanner(_ context.C
 				return ec.fieldContext_Server_viewerCanManageUser(ctx, field)
 			case "roleUsers":
 				return ec.fieldContext_Server_roleUsers(ctx, field)
-			case "userRoleBasedPermissions":
-				return ec.fieldContext_Server_userRoleBasedPermissions(ctx, field)
-			case "userRoleBasedDenials":
-				return ec.fieldContext_Server_userRoleBasedDenials(ctx, field)
+			case "userEffectivePermissions":
+				return ec.fieldContext_Server_userEffectivePermissions(ctx, field)
+			case "userEffectiveDenials":
+				return ec.fieldContext_Server_userEffectiveDenials(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Server", field.Name)
 		},
@@ -12087,6 +12144,129 @@ func (ec *executionContext) fieldContext_Mutation_reorderRoles(ctx context.Conte
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_grantUserPermission(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_grantUserPermission,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().GrantUserPermission(ctx, fc.Args["input"].(model.GrantUserPermissionInput))
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_grantUserPermission(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_grantUserPermission_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_denyUserPermission(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_denyUserPermission,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().DenyUserPermission(ctx, fc.Args["input"].(model.DenyUserPermissionInput))
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_denyUserPermission(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_denyUserPermission_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_clearUserPermissionState(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Mutation_clearUserPermissionState,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Mutation().ClearUserPermissionState(ctx, fc.Args["input"].(model.ClearUserPermissionStateInput))
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Mutation_clearUserPermissionState(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_clearUserPermissionState_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_grantRoomPermission(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -13244,10 +13424,10 @@ func (ec *executionContext) fieldContext_Query_admin(_ context.Context, field gr
 				return ec.fieldContext_AdminQueries_roleUsers(ctx, field)
 			case "userRoles":
 				return ec.fieldContext_AdminQueries_userRoles(ctx, field)
-			case "userRoleBasedPermissions":
-				return ec.fieldContext_AdminQueries_userRoleBasedPermissions(ctx, field)
-			case "userRoleBasedDenials":
-				return ec.fieldContext_AdminQueries_userRoleBasedDenials(ctx, field)
+			case "userEffectivePermissions":
+				return ec.fieldContext_AdminQueries_userEffectivePermissions(ctx, field)
+			case "userEffectiveDenials":
+				return ec.fieldContext_AdminQueries_userEffectiveDenials(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type AdminQueries", field.Name)
 		},
@@ -13537,8 +13717,6 @@ func (ec *executionContext) fieldContext_Query_server(_ context.Context, field g
 				return ec.fieldContext_Server_viewerCanCreateRoom(ctx, field)
 			case "viewerCanManageRooms":
 				return ec.fieldContext_Server_viewerCanManageRooms(ctx, field)
-			case "viewerCanInviteMembers":
-				return ec.fieldContext_Server_viewerCanInviteMembers(ctx, field)
 			case "viewerHasUnreadRooms":
 				return ec.fieldContext_Server_viewerHasUnreadRooms(ctx, field)
 			case "viewerNotificationPreference":
@@ -13563,10 +13741,10 @@ func (ec *executionContext) fieldContext_Query_server(_ context.Context, field g
 				return ec.fieldContext_Server_viewerCanManageUser(ctx, field)
 			case "roleUsers":
 				return ec.fieldContext_Server_roleUsers(ctx, field)
-			case "userRoleBasedPermissions":
-				return ec.fieldContext_Server_userRoleBasedPermissions(ctx, field)
-			case "userRoleBasedDenials":
-				return ec.fieldContext_Server_userRoleBasedDenials(ctx, field)
+			case "userEffectivePermissions":
+				return ec.fieldContext_Server_userEffectivePermissions(ctx, field)
+			case "userEffectiveDenials":
+				return ec.fieldContext_Server_userEffectiveDenials(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Server", field.Name)
 		},
@@ -18188,35 +18366,6 @@ func (ec *executionContext) fieldContext_Server_viewerCanManageRooms(_ context.C
 	return fc, nil
 }
 
-func (ec *executionContext) _Server_viewerCanInviteMembers(ctx context.Context, field graphql.CollectedField, obj *model.Server) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		ec.fieldContext_Server_viewerCanInviteMembers,
-		func(ctx context.Context) (any, error) {
-			return ec.resolvers.Server().ViewerCanInviteMembers(ctx, obj)
-		},
-		nil,
-		ec.marshalNBoolean2bool,
-		true,
-		true,
-	)
-}
-
-func (ec *executionContext) fieldContext_Server_viewerCanInviteMembers(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "Server",
-		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type Boolean does not have child fields")
-		},
-	}
-	return fc, nil
-}
-
 func (ec *executionContext) _Server_viewerHasUnreadRooms(ctx context.Context, field graphql.CollectedField, obj *model.Server) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -18731,15 +18880,15 @@ func (ec *executionContext) fieldContext_Server_roleUsers(ctx context.Context, f
 	return fc, nil
 }
 
-func (ec *executionContext) _Server_userRoleBasedPermissions(ctx context.Context, field graphql.CollectedField, obj *model.Server) (ret graphql.Marshaler) {
+func (ec *executionContext) _Server_userEffectivePermissions(ctx context.Context, field graphql.CollectedField, obj *model.Server) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
-		ec.fieldContext_Server_userRoleBasedPermissions,
+		ec.fieldContext_Server_userEffectivePermissions,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.Server().UserRoleBasedPermissions(ctx, obj, fc.Args["userId"].(string))
+			return ec.resolvers.Server().UserEffectivePermissions(ctx, obj, fc.Args["userId"].(string))
 		},
 		nil,
 		ec.marshalNString2ᚕstringᚄ,
@@ -18748,7 +18897,7 @@ func (ec *executionContext) _Server_userRoleBasedPermissions(ctx context.Context
 	)
 }
 
-func (ec *executionContext) fieldContext_Server_userRoleBasedPermissions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Server_userEffectivePermissions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Server",
 		Field:      field,
@@ -18765,22 +18914,22 @@ func (ec *executionContext) fieldContext_Server_userRoleBasedPermissions(ctx con
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Server_userRoleBasedPermissions_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_Server_userEffectivePermissions_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
 	return fc, nil
 }
 
-func (ec *executionContext) _Server_userRoleBasedDenials(ctx context.Context, field graphql.CollectedField, obj *model.Server) (ret graphql.Marshaler) {
+func (ec *executionContext) _Server_userEffectiveDenials(ctx context.Context, field graphql.CollectedField, obj *model.Server) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
-		ec.fieldContext_Server_userRoleBasedDenials,
+		ec.fieldContext_Server_userEffectiveDenials,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.Server().UserRoleBasedDenials(ctx, obj, fc.Args["userId"].(string))
+			return ec.resolvers.Server().UserEffectiveDenials(ctx, obj, fc.Args["userId"].(string))
 		},
 		nil,
 		ec.marshalNString2ᚕstringᚄ,
@@ -18789,7 +18938,7 @@ func (ec *executionContext) _Server_userRoleBasedDenials(ctx context.Context, fi
 	)
 }
 
-func (ec *executionContext) fieldContext_Server_userRoleBasedDenials(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Server_userEffectiveDenials(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Server",
 		Field:      field,
@@ -18806,7 +18955,7 @@ func (ec *executionContext) fieldContext_Server_userRoleBasedDenials(ctx context
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Server_userRoleBasedDenials_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_Server_userEffectiveDenials_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -23925,6 +24074,47 @@ func (ec *executionContext) unmarshalInputClearRoomPermissionInput(ctx context.C
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputClearUserPermissionStateInput(ctx context.Context, obj any) (model.ClearUserPermissionStateInput, error) {
+	var it model.ClearUserPermissionStateInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"userId", "permission", "roomId"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "userId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("userId"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UserID = data
+		case "permission":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("permission"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Permission = data
+		case "roomId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("roomId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RoomID = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputCreateRoleInput(ctx context.Context, obj any) (model.CreateRoleInput, error) {
 	var it model.CreateRoleInput
 	asMap := map[string]any{}
@@ -24245,6 +24435,47 @@ func (ec *executionContext) unmarshalInputDenyRoomPermissionInput(ctx context.Co
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputDenyUserPermissionInput(ctx context.Context, obj any) (model.DenyUserPermissionInput, error) {
+	var it model.DenyUserPermissionInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"userId", "permission", "roomId"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "userId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("userId"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UserID = data
+		case "permission":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("permission"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Permission = data
+		case "roomId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("roomId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RoomID = data
+		}
+	}
+
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputDismissNotificationInput(ctx context.Context, obj any) (model.DismissNotificationInput, error) {
 	var it model.DismissNotificationInput
 	asMap := map[string]any{}
@@ -24416,6 +24647,47 @@ func (ec *executionContext) unmarshalInputGrantRoomPermissionInput(ctx context.C
 				return it, err
 			}
 			it.Permission = data
+		}
+	}
+
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputGrantUserPermissionInput(ctx context.Context, obj any) (model.GrantUserPermissionInput, error) {
+	var it model.GrantUserPermissionInput
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"userId", "permission", "roomId"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "userId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("userId"))
+			data, err := ec.unmarshalNID2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.UserID = data
+		case "permission":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("permission"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Permission = data
+		case "roomId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("roomId"))
+			data, err := ec.unmarshalOID2ᚖstring(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RoomID = data
 		}
 	}
 
@@ -26328,7 +26600,7 @@ func (ec *executionContext) _AdminQueries(ctx context.Context, sel ast.Selection
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
-		case "userRoleBasedPermissions":
+		case "userEffectivePermissions":
 			field := field
 
 			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
@@ -26337,7 +26609,7 @@ func (ec *executionContext) _AdminQueries(ctx context.Context, sel ast.Selection
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._AdminQueries_userRoleBasedPermissions(ctx, field, obj)
+				res = ec._AdminQueries_userEffectivePermissions(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -26364,7 +26636,7 @@ func (ec *executionContext) _AdminQueries(ctx context.Context, sel ast.Selection
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
-		case "userRoleBasedDenials":
+		case "userEffectiveDenials":
 			field := field
 
 			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
@@ -26373,7 +26645,7 @@ func (ec *executionContext) _AdminQueries(ctx context.Context, sel ast.Selection
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._AdminQueries_userRoleBasedDenials(ctx, field, obj)
+				res = ec._AdminQueries_userEffectiveDenials(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -28671,6 +28943,27 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "reorderRoles":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_reorderRoles(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "grantUserPermission":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_grantUserPermission(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "denyUserPermission":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_denyUserPermission(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "clearUserPermissionState":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_clearUserPermissionState(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -32602,42 +32895,6 @@ func (ec *executionContext) _Server(ctx context.Context, sel ast.SelectionSet, o
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
-		case "viewerCanInviteMembers":
-			field := field
-
-			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
-				defer func() {
-					if r := recover(); r != nil {
-						ec.Error(ctx, ec.Recover(ctx, r))
-					}
-				}()
-				res = ec._Server_viewerCanInviteMembers(ctx, field, obj)
-				if res == graphql.Null {
-					atomic.AddUint32(&fs.Invalids, 1)
-				}
-				return res
-			}
-
-			if field.Deferrable != nil {
-				dfs, ok := deferred[field.Deferrable.Label]
-				di := 0
-				if ok {
-					dfs.AddField(field)
-					di = len(dfs.Values) - 1
-				} else {
-					dfs = graphql.NewFieldSet([]graphql.CollectedField{field})
-					deferred[field.Deferrable.Label] = dfs
-				}
-				dfs.Concurrently(di, func(ctx context.Context) graphql.Marshaler {
-					return innerFunc(ctx, dfs)
-				})
-
-				// don't run the out.Concurrently() call below
-				out.Values[i] = graphql.Null
-				continue
-			}
-
-			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
 		case "viewerHasUnreadRooms":
 			field := field
 
@@ -33061,7 +33318,7 @@ func (ec *executionContext) _Server(ctx context.Context, sel ast.SelectionSet, o
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
-		case "userRoleBasedPermissions":
+		case "userEffectivePermissions":
 			field := field
 
 			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
@@ -33070,7 +33327,7 @@ func (ec *executionContext) _Server(ctx context.Context, sel ast.SelectionSet, o
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Server_userRoleBasedPermissions(ctx, field, obj)
+				res = ec._Server_userEffectivePermissions(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -33097,7 +33354,7 @@ func (ec *executionContext) _Server(ctx context.Context, sel ast.SelectionSet, o
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
-		case "userRoleBasedDenials":
+		case "userEffectiveDenials":
 			field := field
 
 			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
@@ -33106,7 +33363,7 @@ func (ec *executionContext) _Server(ctx context.Context, sel ast.SelectionSet, o
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Server_userRoleBasedDenials(ctx, field, obj)
+				res = ec._Server_userEffectiveDenials(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -36232,6 +36489,11 @@ func (ec *executionContext) unmarshalNClearRoomPermissionInput2hmansᚗdeᚋchat
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalNClearUserPermissionStateInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐClearUserPermissionStateInput(ctx context.Context, v any) (model.ClearUserPermissionStateInput, error) {
+	res, err := ec.unmarshalInputClearUserPermissionStateInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) marshalNConnectionInfo2ᚖhmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐConnectionInfo(ctx context.Context, sel ast.SelectionSet, v *model.ConnectionInfo) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
@@ -36284,6 +36546,11 @@ func (ec *executionContext) unmarshalNDenyPermissionInput2hmansᚗdeᚋchattoᚋ
 
 func (ec *executionContext) unmarshalNDenyRoomPermissionInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐDenyRoomPermissionInput(ctx context.Context, v any) (model.DenyRoomPermissionInput, error) {
 	res, err := ec.unmarshalInputDenyRoomPermissionInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalNDenyUserPermissionInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐDenyUserPermissionInput(ctx context.Context, v any) (model.DenyUserPermissionInput, error) {
+	res, err := ec.unmarshalInputDenyUserPermissionInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
@@ -36363,6 +36630,11 @@ func (ec *executionContext) unmarshalNGrantPermissionInput2hmansᚗdeᚋchatto�
 
 func (ec *executionContext) unmarshalNGrantRoomPermissionInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐGrantRoomPermissionInput(ctx context.Context, v any) (model.GrantRoomPermissionInput, error) {
 	res, err := ec.unmarshalInputGrantRoomPermissionInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) unmarshalNGrantUserPermissionInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐGrantUserPermissionInput(ctx context.Context, v any) (model.GrantUserPermissionInput, error) {
+	res, err := ec.unmarshalInputGrantUserPermissionInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 

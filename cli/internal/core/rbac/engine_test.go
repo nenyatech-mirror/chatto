@@ -928,10 +928,10 @@ func TestEngine_GetUserHighestPosition(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create roles with different positions
-	engine.CreateRoleWithPosition(ctx, "owner", "Owner", "Top rank", 0)
-	engine.CreateRoleWithPosition(ctx, "moderator", "Moderator", "Mid rank", 1)
-	engine.CreateRoleWithPosition(ctx, "editor", "Editor", "Lower rank", 2)
+	// Create roles with different positions. Higher position = higher rank.
+	engine.CreateRoleWithPosition(ctx, "owner", "Owner", "Top rank", 300)
+	engine.CreateRoleWithPosition(ctx, "moderator", "Moderator", "Mid rank", 200)
+	engine.CreateRoleWithPosition(ctx, "editor", "Editor", "Lower rank", 100)
 
 	t.Run("returns PositionEveryone for user with no roles", func(t *testing.T) {
 		pos, err := engine.GetUserHighestPosition(ctx, "no-roles-user")
@@ -950,44 +950,41 @@ func TestEngine_GetUserHighestPosition(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetUserHighestPosition() error = %v", err)
 		}
-		if pos != 1 {
-			t.Errorf("GetUserHighestPosition() = %d, want 1", pos)
+		if pos != 200 {
+			t.Errorf("GetUserHighestPosition() = %d, want 200", pos)
 		}
 	})
 
-	t.Run("returns lowest position (highest rank) for user with multiple roles", func(t *testing.T) {
-		engine.AssignRole(ctx, "multi-role-user", "editor")    // position 2
-		engine.AssignRole(ctx, "multi-role-user", "moderator") // position 1
+	t.Run("returns highest position (highest rank) for user with multiple roles", func(t *testing.T) {
+		engine.AssignRole(ctx, "multi-role-user", "editor")    // position 100
+		engine.AssignRole(ctx, "multi-role-user", "moderator") // position 200
 
 		pos, err := engine.GetUserHighestPosition(ctx, "multi-role-user")
 		if err != nil {
 			t.Fatalf("GetUserHighestPosition() error = %v", err)
 		}
-		if pos != 1 {
-			t.Errorf("GetUserHighestPosition() = %d, want 1 (lowest of assigned roles)", pos)
+		if pos != 200 {
+			t.Errorf("GetUserHighestPosition() = %d, want 200 (highest of assigned roles)", pos)
 		}
 	})
 
 	t.Run("updates correctly after role revocation", func(t *testing.T) {
-		engine.AssignRole(ctx, "revoke-test-user", "owner")     // position 0
-		engine.AssignRole(ctx, "revoke-test-user", "moderator") // position 1
+		engine.AssignRole(ctx, "revoke-test-user", "owner")     // position 300
+		engine.AssignRole(ctx, "revoke-test-user", "moderator") // position 200
 
-		// Initially should have position 0 (owner)
 		pos, _ := engine.GetUserHighestPosition(ctx, "revoke-test-user")
-		if pos != 0 {
-			t.Errorf("Before revoke: position = %d, want 0", pos)
+		if pos != 300 {
+			t.Errorf("Before revoke: position = %d, want 300", pos)
 		}
 
-		// Revoke owner role
 		engine.RevokeRole(ctx, "revoke-test-user", "owner")
 
-		// Now should have position 1 (moderator)
 		pos, err := engine.GetUserHighestPosition(ctx, "revoke-test-user")
 		if err != nil {
 			t.Fatalf("GetUserHighestPosition() after revoke error = %v", err)
 		}
-		if pos != 1 {
-			t.Errorf("After revoke: position = %d, want 1", pos)
+		if pos != 200 {
+			t.Errorf("After revoke: position = %d, want 200", pos)
 		}
 	})
 }
@@ -998,144 +995,91 @@ func TestEngine_CanUserManageRole(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create roles with different positions
+	// Higher position = higher rank.
 	engine.CreateRoleWithPosition(ctx, "owner", "Owner", "Owner role", rbac.PositionOwner)
 	engine.CreateRoleWithPosition(ctx, "admin", "Admin", "Admin role", rbac.PositionAdmin)
-	engine.CreateRoleWithPosition(ctx, "moderator", "Moderator", "Moderator role", 2)
-	engine.CreateRoleWithPosition(ctx, "editor", "Editor", "Editor role", 3)
+	engine.CreateRoleWithPosition(ctx, "moderator", "Moderator", "Moderator role", rbac.PositionModerator)
+	engine.CreateRoleWithPosition(ctx, "editor", "Editor", "Editor role", 50)
 
-	t.Run("owner (position 0) can manage any role", func(t *testing.T) {
+	t.Run("owner can manage any role", func(t *testing.T) {
 		engine.AssignRole(ctx, "owner-user", "owner")
 
-		// Owner can manage owner role (position 0)
-		can, err := engine.CanUserManageRole(ctx, "owner-user", rbac.PositionOwner)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
-		if !can {
-			t.Error("Owner should be able to manage owner role")
-		}
-
-		// Owner can manage admin role (position 1)
-		can, err = engine.CanUserManageRole(ctx, "owner-user", rbac.PositionAdmin)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
-		if !can {
-			t.Error("Owner should be able to manage admin role")
-		}
-
-		// Owner can manage moderator role (position 2)
-		can, err = engine.CanUserManageRole(ctx, "owner-user", 2)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
-		if !can {
-			t.Error("Owner should be able to manage moderator role")
+		for _, p := range []int32{rbac.PositionOwner, rbac.PositionAdmin, rbac.PositionModerator, 50} {
+			can, err := engine.CanUserManageRole(ctx, "owner-user", p)
+			if err != nil {
+				t.Fatalf("CanUserManageRole(%d): %v", p, err)
+			}
+			if !can {
+				t.Errorf("Owner should be able to manage role at position %d", p)
+			}
 		}
 	})
 
-	t.Run("admin (position 1) can manage lower-ranked roles only", func(t *testing.T) {
+	t.Run("admin can manage lower-ranked roles only", func(t *testing.T) {
 		engine.AssignRole(ctx, "admin-user", "admin")
 
-		// Admin cannot manage admin role (same position)
-		can, err := engine.CanUserManageRole(ctx, "admin-user", rbac.PositionAdmin)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
-		if can {
-			t.Error("Admin should NOT be able to manage admin role (same rank)")
-		}
-
-		// Admin cannot manage owner role (higher rank)
-		can, err = engine.CanUserManageRole(ctx, "admin-user", rbac.PositionOwner)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
-		if can {
-			t.Error("Admin should NOT be able to manage owner role (higher rank)")
+		// Admin cannot manage admin (same position) or owner (higher rank).
+		for _, p := range []int32{rbac.PositionAdmin, rbac.PositionOwner} {
+			can, _ := engine.CanUserManageRole(ctx, "admin-user", p)
+			if can {
+				t.Errorf("Admin should NOT be able to manage role at position %d", p)
+			}
 		}
 
-		// Admin can manage moderator role (position 2)
-		can, err = engine.CanUserManageRole(ctx, "admin-user", 2)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
+		// Admin can manage moderator (lower rank).
+		can, _ := engine.CanUserManageRole(ctx, "admin-user", rbac.PositionModerator)
 		if !can {
 			t.Error("Admin should be able to manage moderator role")
 		}
 	})
 
 	t.Run("moderator can manage roles below their position", func(t *testing.T) {
-		engine.AssignRole(ctx, "mod-user", "moderator") // position 2
+		engine.AssignRole(ctx, "mod-user", "moderator")
 
-		// Moderator can manage editor role (position 3)
-		can, err := engine.CanUserManageRole(ctx, "mod-user", 3)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
+		can, _ := engine.CanUserManageRole(ctx, "mod-user", 50)
 		if !can {
 			t.Error("Moderator should be able to manage editor role")
 		}
 	})
 
 	t.Run("user cannot manage roles at same position", func(t *testing.T) {
-		engine.AssignRole(ctx, "mod-user-2", "moderator") // position 2
+		engine.AssignRole(ctx, "mod-user-2", "moderator")
 
-		// Moderator cannot manage another moderator role (same position)
-		can, err := engine.CanUserManageRole(ctx, "mod-user-2", 2)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
+		can, _ := engine.CanUserManageRole(ctx, "mod-user-2", rbac.PositionModerator)
 		if can {
 			t.Error("Moderator should NOT be able to manage roles at same position")
 		}
 	})
 
-	t.Run("user cannot manage roles at lower position (higher rank)", func(t *testing.T) {
-		engine.AssignRole(ctx, "editor-user", "editor") // position 3
+	t.Run("user cannot manage roles at higher position (higher rank)", func(t *testing.T) {
+		engine.AssignRole(ctx, "editor-user", "editor")
 
-		// Editor cannot manage moderator role (position 2)
-		can, err := engine.CanUserManageRole(ctx, "editor-user", 2)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
-		if can {
-			t.Error("Editor should NOT be able to manage moderator role")
-		}
-
-		// Editor cannot manage admin role (position 1)
-		can, err = engine.CanUserManageRole(ctx, "editor-user", rbac.PositionAdmin)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
-		if can {
-			t.Error("Editor should NOT be able to manage admin role")
+		for _, p := range []int32{rbac.PositionModerator, rbac.PositionAdmin} {
+			can, _ := engine.CanUserManageRole(ctx, "editor-user", p)
+			if can {
+				t.Errorf("Editor should NOT be able to manage role at position %d", p)
+			}
 		}
 	})
 
 	t.Run("user with no roles cannot manage any custom role", func(t *testing.T) {
-		// User with no roles has PositionEveryone
-		can, err := engine.CanUserManageRole(ctx, "no-roles-user", 3)
-		if err != nil {
-			t.Fatalf("CanUserManageRole() error = %v", err)
-		}
+		can, _ := engine.CanUserManageRole(ctx, "no-roles-user", 50)
 		if can {
 			t.Error("User with no roles should NOT be able to manage any role")
 		}
 	})
 }
 
-func TestEngine_CanUserManageUser(t *testing.T) {
+func TestEngine_OutranksUser_Hierarchy(t *testing.T) {
 	engine, cleanup := setupTestEngine(t, defaultTestConfig())
 	defer cleanup()
 
 	ctx := context.Background()
 
-	// Create roles
+	// Higher position = higher rank.
 	engine.CreateRoleWithPosition(ctx, "admin", "Admin", "Admin role", rbac.PositionAdmin)
-	engine.CreateRoleWithPosition(ctx, "moderator", "Moderator", "Moderator role", 2)
-	engine.CreateRoleWithPosition(ctx, "editor", "Editor", "Editor role", 3)
+	engine.CreateRoleWithPosition(ctx, "moderator", "Moderator", "Moderator role", rbac.PositionModerator)
+	engine.CreateRoleWithPosition(ctx, "editor", "Editor", "Editor role", 50)
 
 	// Assign roles
 	engine.AssignRole(ctx, "admin-user", "admin")
@@ -1144,18 +1088,18 @@ func TestEngine_CanUserManageUser(t *testing.T) {
 
 	t.Run("higher-ranked user can manage lower-ranked user", func(t *testing.T) {
 		// Admin can manage moderator
-		can, err := engine.CanUserManageUser(ctx, "admin-user", "mod-user")
+		can, err := engine.OutranksUser(ctx, "admin-user", "mod-user")
 		if err != nil {
-			t.Fatalf("CanUserManageUser() error = %v", err)
+			t.Fatalf("OutranksUser error = %v", err)
 		}
 		if !can {
 			t.Error("Admin should be able to manage moderator")
 		}
 
 		// Moderator can manage editor
-		can, err = engine.CanUserManageUser(ctx, "mod-user", "editor-user")
+		can, err = engine.OutranksUser(ctx, "mod-user", "editor-user")
 		if err != nil {
-			t.Fatalf("CanUserManageUser() error = %v", err)
+			t.Fatalf("OutranksUser error = %v", err)
 		}
 		if !can {
 			t.Error("Moderator should be able to manage editor")
@@ -1166,18 +1110,18 @@ func TestEngine_CanUserManageUser(t *testing.T) {
 		engine.AssignRole(ctx, "mod-user-2", "moderator")
 
 		// Moderator cannot manage another moderator
-		can, err := engine.CanUserManageUser(ctx, "mod-user", "mod-user-2")
+		can, err := engine.OutranksUser(ctx, "mod-user", "mod-user-2")
 		if err != nil {
-			t.Fatalf("CanUserManageUser() error = %v", err)
+			t.Fatalf("OutranksUser error = %v", err)
 		}
 		if can {
 			t.Error("Moderator should NOT be able to manage another moderator")
 		}
 
 		// And vice versa
-		can, err = engine.CanUserManageUser(ctx, "mod-user-2", "mod-user")
+		can, err = engine.OutranksUser(ctx, "mod-user-2", "mod-user")
 		if err != nil {
-			t.Fatalf("CanUserManageUser() error = %v", err)
+			t.Fatalf("OutranksUser error = %v", err)
 		}
 		if can {
 			t.Error("Moderator should NOT be able to manage another moderator (reverse)")
@@ -1186,18 +1130,18 @@ func TestEngine_CanUserManageUser(t *testing.T) {
 
 	t.Run("lower-ranked user cannot manage higher-ranked user", func(t *testing.T) {
 		// Editor cannot manage moderator
-		can, err := engine.CanUserManageUser(ctx, "editor-user", "mod-user")
+		can, err := engine.OutranksUser(ctx, "editor-user", "mod-user")
 		if err != nil {
-			t.Fatalf("CanUserManageUser() error = %v", err)
+			t.Fatalf("OutranksUser error = %v", err)
 		}
 		if can {
 			t.Error("Editor should NOT be able to manage moderator")
 		}
 
 		// Editor cannot manage admin
-		can, err = engine.CanUserManageUser(ctx, "editor-user", "admin-user")
+		can, err = engine.OutranksUser(ctx, "editor-user", "admin-user")
 		if err != nil {
-			t.Fatalf("CanUserManageUser() error = %v", err)
+			t.Fatalf("OutranksUser error = %v", err)
 		}
 		if can {
 			t.Error("Editor should NOT be able to manage admin")
@@ -1205,9 +1149,9 @@ func TestEngine_CanUserManageUser(t *testing.T) {
 	})
 
 	t.Run("user with no roles cannot manage user with any role", func(t *testing.T) {
-		can, err := engine.CanUserManageUser(ctx, "no-roles-user", "editor-user")
+		can, err := engine.OutranksUser(ctx, "no-roles-user", "editor-user")
 		if err != nil {
-			t.Fatalf("CanUserManageUser() error = %v", err)
+			t.Fatalf("OutranksUser error = %v", err)
 		}
 		if can {
 			t.Error("User with no roles should NOT be able to manage user with role")
@@ -1216,9 +1160,9 @@ func TestEngine_CanUserManageUser(t *testing.T) {
 
 	t.Run("user can manage user with no roles", func(t *testing.T) {
 		// Any user with a role can manage users with no roles (PositionEveryone)
-		can, err := engine.CanUserManageUser(ctx, "editor-user", "no-roles-user")
+		can, err := engine.OutranksUser(ctx, "editor-user", "no-roles-user")
 		if err != nil {
-			t.Fatalf("CanUserManageUser() error = %v", err)
+			t.Fatalf("OutranksUser error = %v", err)
 		}
 		if !can {
 			t.Error("User with role should be able to manage user with no roles")
@@ -1229,7 +1173,7 @@ func TestEngine_CanUserManageUser(t *testing.T) {
 func TestEngine_GetNextAvailablePosition(t *testing.T) {
 	ctx := context.Background()
 
-	t.Run("returns 1 when no roles exist", func(t *testing.T) {
+	t.Run("returns PositionCustomFirst when no custom roles exist", func(t *testing.T) {
 		engine, cleanup := setupTestEngine(t, defaultTestConfig())
 		defer cleanup()
 
@@ -1237,16 +1181,16 @@ func TestEngine_GetNextAvailablePosition(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetNextAvailablePosition() error = %v", err)
 		}
-		if pos != 1 {
-			t.Errorf("GetNextAvailablePosition() = %d, want 1", pos)
+		if pos != rbac.PositionCustomFirst {
+			t.Errorf("GetNextAvailablePosition() = %d, want %d (PositionCustomFirst)", pos, rbac.PositionCustomFirst)
 		}
 	})
 
-	t.Run("returns correct next position after creating roles", func(t *testing.T) {
+	t.Run("returns one past highest existing custom role", func(t *testing.T) {
 		engine, cleanup := setupTestEngine(t, defaultTestConfig())
 		defer cleanup()
 
-		_, err := engine.CreateRoleWithPosition(ctx, "firstrole", "First Role", "First", 1)
+		_, err := engine.CreateRoleWithPosition(ctx, "firstrole", "First Role", "First", rbac.PositionCustomFirst)
 		if err != nil {
 			t.Fatalf("CreateRoleWithPosition() error = %v", err)
 		}
@@ -1255,11 +1199,11 @@ func TestEngine_GetNextAvailablePosition(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetNextAvailablePosition() error = %v", err)
 		}
-		if pos != 2 {
-			t.Errorf("GetNextAvailablePosition() = %d, want 2", pos)
+		if pos != rbac.PositionCustomFirst+1 {
+			t.Errorf("GetNextAvailablePosition() = %d, want %d", pos, rbac.PositionCustomFirst+1)
 		}
 
-		_, err = engine.CreateRoleWithPosition(ctx, "secondrole", "Second Role", "Second", 2)
+		_, err = engine.CreateRoleWithPosition(ctx, "secondrole", "Second Role", "Second", rbac.PositionCustomFirst+1)
 		if err != nil {
 			t.Fatalf("CreateRoleWithPosition() error = %v", err)
 		}
@@ -1268,8 +1212,8 @@ func TestEngine_GetNextAvailablePosition(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetNextAvailablePosition() error = %v", err)
 		}
-		if pos != 3 {
-			t.Errorf("GetNextAvailablePosition() = %d, want 3", pos)
+		if pos != rbac.PositionCustomFirst+2 {
+			t.Errorf("GetNextAvailablePosition() = %d, want %d", pos, rbac.PositionCustomFirst+2)
 		}
 	})
 
@@ -1350,32 +1294,35 @@ func TestEngine_ReorderRoles(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Create custom roles with initial positions
-	engine.CreateRoleWithPosition(ctx, "alpha", "Alpha", "First", 1)
-	engine.CreateRoleWithPosition(ctx, "beta", "Beta", "Second", 2)
-	engine.CreateRoleWithPosition(ctx, "gamma", "Gamma", "Third", 3)
+	// Create custom roles with initial positions starting at PositionCustomFirst
+	// to avoid collisions with system roles (admin=1, moderator=2).
+	engine.CreateRoleWithPosition(ctx, "alpha", "Alpha", "First", rbac.PositionCustomFirst)
+	engine.CreateRoleWithPosition(ctx, "beta", "Beta", "Second", rbac.PositionCustomFirst+1)
+	engine.CreateRoleWithPosition(ctx, "gamma", "Gamma", "Third", rbac.PositionCustomFirst+2)
 
 	t.Run("reorders roles correctly", func(t *testing.T) {
-		// Reorder: gamma, alpha, beta (reversed order with gamma first)
+		// Reorder: gamma, alpha, beta (reversed order with gamma first).
+		// New positions start at PositionCustomFirst so they never collide
+		// with admin (1) or moderator (2).
 		roles, err := engine.ReorderRoles(ctx, []string{"gamma", "alpha", "beta"})
 		if err != nil {
 			t.Fatalf("ReorderRoles() error = %v", err)
 		}
 
-		// Check positions were reassigned
 		posMap := make(map[string]int32)
 		for _, r := range roles {
 			posMap[r.Name] = r.Position
 		}
 
-		if posMap["gamma"] != 1 {
-			t.Errorf("gamma position = %d, want 1", posMap["gamma"])
+		want := map[string]int32{
+			"gamma": rbac.PositionCustomFirst,
+			"alpha": rbac.PositionCustomFirst + 1,
+			"beta":  rbac.PositionCustomFirst + 2,
 		}
-		if posMap["alpha"] != 2 {
-			t.Errorf("alpha position = %d, want 2", posMap["alpha"])
-		}
-		if posMap["beta"] != 3 {
-			t.Errorf("beta position = %d, want 3", posMap["beta"])
+		for name, w := range want {
+			if posMap[name] != w {
+				t.Errorf("%s position = %d, want %d", name, posMap[name], w)
+			}
 		}
 	})
 

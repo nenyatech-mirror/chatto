@@ -88,11 +88,15 @@ type AdminQueries struct {
 	RoleUsers []*corev1.User `json:"roleUsers"`
 	// Get server roles assigned to a specific user.
 	UserRoles []string `json:"userRoles"`
-	// Get the role-based permissions for a user.
-	UserRoleBasedPermissions []string `json:"userRoleBasedPermissions"`
-	// Get the permissions denied via roles for a user.
-	// Used for UI to show when a permission is blocked via roles.
-	UserRoleBasedDenials []string `json:"userRoleBasedDenials"`
+	// Get a user's effective allowed permissions at server scope. Combines
+	// role-based grants with user-level overrides (`grantUserPermission` /
+	// `denyUserPermission`) — the same answer the authorization resolver
+	// produces. For per-decision provenance use the permission explainer.
+	UserEffectivePermissions []string `json:"userEffectivePermissions"`
+	// Get a user's effective denied permissions at server scope. Mirrors
+	// `userEffectivePermissions` but lists permissions whose first decision
+	// is a deny. Used in admin UIs to surface where a permission is blocked.
+	UserEffectiveDenials []string `json:"userEffectiveDenials"`
 }
 
 // Server configuration section.
@@ -166,6 +170,16 @@ type ClearRoomPermissionInput struct {
 	Role string `json:"role"`
 	// The permission identifier to clear.
 	Permission string `json:"permission"`
+}
+
+// Input for clearing both grant and denial of a permission on a user.
+type ClearUserPermissionStateInput struct {
+	// The user whose permission state to clear.
+	UserID string `json:"userId"`
+	// The permission identifier to clear.
+	Permission string `json:"permission"`
+	// Optional room ID. When omitted, clears the server-wide state.
+	RoomID *string `json:"roomId,omitempty"`
 }
 
 // Information about the NATS connection.
@@ -260,6 +274,17 @@ type DenyRoomPermissionInput struct {
 	Permission string `json:"permission"`
 }
 
+// Input for denying a permission directly to a user.
+type DenyUserPermissionInput struct {
+	// The user to deny the permission for.
+	UserID string `json:"userId"`
+	// The permission identifier to deny.
+	Permission string `json:"permission"`
+	// Optional room ID for a room-scoped denial. When omitted, the denial
+	// applies server-wide.
+	RoomID *string `json:"roomId,omitempty"`
+}
+
 // Input for dismissing a notification.
 type DismissNotificationInput struct {
 	// The ID of the notification to dismiss.
@@ -300,6 +325,18 @@ type GrantRoomPermissionInput struct {
 	Role string `json:"role"`
 	// The permission identifier to grant.
 	Permission string `json:"permission"`
+}
+
+// Input for granting a permission directly to a user.
+type GrantUserPermissionInput struct {
+	// The user to grant the permission to.
+	UserID string `json:"userId"`
+	// The permission identifier to grant.
+	Permission string `json:"permission"`
+	// Optional room ID for a room-scoped grant. When omitted, the grant
+	// applies server-wide. Room-scoped grants only work for permissions
+	// that support room scope (message.*, room.list, etc.).
+	RoomID *string `json:"roomId,omitempty"`
 }
 
 // Input for joining a room.
@@ -518,7 +555,7 @@ type RoleRoomPermissions struct {
 	DisplayName string `json:"displayName"`
 	// Whether this is a system-defined role
 	IsSystem bool `json:"isSystem"`
-	// Hierarchy position (lower = higher rank)
+	// Hierarchy position (higher = higher rank; see Role.position).
 	Position int32 `json:"position"`
 	// Permissions granted at room level
 	Permissions []string `json:"permissions"`
@@ -639,8 +676,6 @@ type Server struct {
 	ViewerCanCreateRoom bool `json:"viewerCanCreateRoom"`
 	// Whether the current user can manage rooms (has room.manage permission).
 	ViewerCanManageRooms bool `json:"viewerCanManageRooms"`
-	// Whether the current user can invite new members (has admin.members.invite permission).
-	ViewerCanInviteMembers bool `json:"viewerCanInviteMembers"`
 	// Whether the current user has any unread messages in rooms they've joined.
 	ViewerHasUnreadRooms bool `json:"viewerHasUnreadRooms"`
 	// The current user's server-level notification preference. Null if not authenticated.
@@ -663,17 +698,24 @@ type Server struct {
 	ViewerCanManageRoles bool `json:"viewerCanManageRoles"`
 	// Whether the current user can assign roles to users (has admin.roles.assign permission).
 	ViewerCanAssignRoles bool `json:"viewerCanAssignRoles"`
-	// Check if the viewer can manage a specific user based on role hierarchy.
-	// Returns true if the viewer's highest role outranks the target user's highest role.
+	// UI hint reporting whether the viewer outranks the target user by role
+	// hierarchy. **This is a rank check only**, not an authorization gate —
+	// capabilities like "edit this user's profile" additionally require a
+	// permission (e.g. `role.assign`). Use this for showing/hiding admin UI
+	// affordances; never as the sole basis for permitting a mutation. See
+	// `.claude/rules/authorization.md` (`permission AND OutranksUser`).
 	ViewerCanManageUser bool `json:"viewerCanManageUser"`
 	// Get users assigned to a specific role.
 	RoleUsers []*corev1.User `json:"roleUsers"`
-	// Get permissions the user would have via roles.
-	// Implements deny-override: if ANY role denies, permission is blocked regardless of grants.
-	UserRoleBasedPermissions []string `json:"userRoleBasedPermissions"`
-	// Get permissions denied for the user via their roles.
-	// Used for UI to show when a permission is blocked via roles.
-	UserRoleBasedDenials []string `json:"userRoleBasedDenials"`
+	// Get a user's effective allowed permissions at server scope. Combines
+	// role-based grants with user-level overrides (`grantUserPermission` /
+	// `denyUserPermission`) — the same answer the authorization resolver
+	// produces. For per-decision provenance use the permission explainer.
+	UserEffectivePermissions []string `json:"userEffectivePermissions"`
+	// Get a user's effective denied permissions at server scope. Mirrors
+	// `userEffectivePermissions` but lists permissions whose first decision
+	// is a deny.
+	UserEffectiveDenials []string `json:"userEffectiveDenials"`
 }
 
 // Runtime-editable server configuration.
