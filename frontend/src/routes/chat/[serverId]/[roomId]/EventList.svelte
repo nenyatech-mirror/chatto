@@ -13,6 +13,7 @@
   import TypingIndicator from './TypingIndicator.svelte';
   import { computeEventMetadata } from './messageGrouping';
   import { buildVirtualItems, type VirtualItem } from './virtualItems';
+  import ScrollFader from '$lib/ui/ScrollFader.svelte';
   import { getActiveServer } from '$lib/state/activeServer.svelte';
   import { serverRegistry } from '$lib/state/server/registry.svelte';
   import { getUserSettings } from '$lib/state/userSettings.svelte';
@@ -583,75 +584,79 @@
   {/if}
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div
-    bind:this={scrollContainer}
-    class="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain [&>div]:mt-auto"
+  <ScrollFader
+    top
+    bottom
+    bind:scrollEl={scrollContainer}
+    scrollClass="overscroll-y-contain"
     data-testid="messages-container"
     onwheel={markUserScrollIntent}
     ontouchmove={markUserScrollIntent}
   >
-    {#if !isLoading && virtualItems.length === 0}
-      <div class="flex flex-1 items-center justify-center">
-        <div class="py-4 text-sm text-muted/40">{emptyMessage}</div>
-      </div>
-    {:else if !isLoading}
-      {#if isLoadingMore}
-        <div class="px-4 py-2">
-          <MessageEventSkeleton />
-          <MessageEventSkeleton compact />
-          <MessageEventSkeleton compact />
+    <div class="mt-auto pb-2">
+      {#if !isLoading && virtualItems.length === 0}
+        <div class="flex flex-1 items-center justify-center">
+          <div class="py-4 text-sm text-muted/40">{emptyMessage}</div>
         </div>
+      {:else if !isLoading}
+        {#if isLoadingMore}
+          <div class="px-4 py-2">
+            <MessageEventSkeleton />
+            <MessageEventSkeleton compact />
+            <MessageEventSkeleton compact />
+          </div>
+        {/if}
+        <Virtualizer
+          bind:this={virtualizerHandle}
+          data={virtualItems}
+          getKey={(item, index) => item?.key ?? `__ix_${index}`}
+          scrollRef={scrollContainer}
+          shift={isLoadingMore}
+          itemSize={60}
+          onscroll={handleVirtuaScroll}
+        >
+          {#snippet children(item: VirtualItem)}
+            {#if !item}
+              <!-- Stale virtualizer index during data transition, skip -->
+            {:else if item.type === 'start-marker'}
+              <div class="pt-10 pb-2 text-center text-sm text-muted/40">
+                You've reached the very beginning of this conversation.
+              </div>
+            {:else if item.type === 'day-separator'}
+              <DaySeparator label={item.label} />
+            {:else if item.type === 'unread-separator'}
+              <UnreadSeparator />
+            {:else if item.type === 'system-group'}
+              <!-- Same guard pattern as the event branch below — virtua may re-invoke
+                   the snippet with a stale item reference during data transitions
+                   (e.g. switching rooms or servers). -->
+              {@const groupEvents = item?.events}
+              {@const groupKind = item?.kind}
+              {#if groupEvents && groupKind && groupEvents.length > 0}
+                <SystemEventGroup events={groupEvents} kind={groupKind} />
+              {/if}
+            {:else}
+              <!--
+                Use {@const} with optional chaining to snapshot the event and guard
+                against the virtualizer's item getter returning undefined during data
+                transitions. Svelte 5's reactive prop getters can re-evaluate before
+                the outer {#if !item} branch switches, so we need this inner guard.
+              -->
+              {@const eventData = item?.event}
+              {#if eventData}
+                <RoomEvent
+                  event={eventData}
+                  compact={!item.isFirstInGroup}
+                  {roomId}
+                  onOpenThread={getOpenThreadHandler(eventData)}
+                />
+              {/if}
+            {/if}
+          {/snippet}
+        </Virtualizer>
       {/if}
-      <Virtualizer
-        bind:this={virtualizerHandle}
-        data={virtualItems}
-        getKey={(item, index) => item?.key ?? `__ix_${index}`}
-        scrollRef={scrollContainer}
-        shift={isLoadingMore}
-        itemSize={60}
-        onscroll={handleVirtuaScroll}
-      >
-        {#snippet children(item: VirtualItem)}
-          {#if !item}
-            <!-- Stale virtualizer index during data transition, skip -->
-          {:else if item.type === 'start-marker'}
-            <div class="py-2 text-center text-sm text-muted/40">
-              You've reached the very beginning of this conversation.
-            </div>
-          {:else if item.type === 'day-separator'}
-            <DaySeparator label={item.label} />
-          {:else if item.type === 'unread-separator'}
-            <UnreadSeparator />
-          {:else if item.type === 'system-group'}
-            <!-- Same guard pattern as the event branch below — virtua may re-invoke
-                 the snippet with a stale item reference during data transitions
-                 (e.g. switching rooms or servers). -->
-            {@const groupEvents = item?.events}
-            {@const groupKind = item?.kind}
-            {#if groupEvents && groupKind && groupEvents.length > 0}
-              <SystemEventGroup events={groupEvents} kind={groupKind} />
-            {/if}
-          {:else}
-            <!--
-              Use {@const} with optional chaining to snapshot the event and guard
-              against the virtualizer's item getter returning undefined during data
-              transitions. Svelte 5's reactive prop getters can re-evaluate before
-              the outer {#if !item} branch switches, so we need this inner guard.
-            -->
-            {@const eventData = item?.event}
-            {#if eventData}
-              <RoomEvent
-                event={eventData}
-                compact={!item.isFirstInGroup}
-                {roomId}
-                onOpenThread={getOpenThreadHandler(eventData)}
-              />
-            {/if}
-          {/if}
-        {/snippet}
-      </Virtualizer>
-    {/if}
-  </div>
+    </div>
+  </ScrollFader>
 
   <TypingIndicator {typingUserIds} members={typingMembers} />
 
