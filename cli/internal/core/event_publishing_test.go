@@ -109,6 +109,13 @@ func TestDeleteMessage_PublishesLiveEvent(t *testing.T) {
 		t.Fatal("expected MessagePostedEvent")
 	}
 
+	// Post-#597 cutover: DeleteMessage publishes a durable
+	// MessageRetractedEvent on EVT AND a synthesised
+	// MessageDeletedEvent live mirror on
+	// live.server.room.{kind}.{r}.message_deleted, so frontend
+	// handlers that listen for MessageDeletedEvent keep working.
+	// This test watches the live mirror, which is what reaches
+	// the myEvents subscription.
 	subject := subjects.LiveRoomEvent(string(KindChannel), room.Id, "message_deleted")
 	received := make(chan *nats.Msg, 1)
 	sub, err := nc.Subscribe(subject, func(msg *nats.Msg) {
@@ -147,7 +154,7 @@ func TestDeleteMessage_PublishesLiveEvent(t *testing.T) {
 			t.Errorf("ActorId = %q, want %q", got.ActorId, user.Id)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for MessageDeletedEvent on live subject")
+		t.Fatal("timed out waiting for MessageDeletedEvent on live mirror subject")
 	}
 }
 
@@ -164,6 +171,11 @@ func TestEditMessage_PublishesLiveEvent(t *testing.T) {
 		t.Fatal("expected MessagePostedEvent")
 	}
 
+	// Post-#597 cutover: EditMessage publishes a durable
+	// MessageEditedEvent on EVT AND a synthesised
+	// MessageUpdatedEvent live mirror on
+	// live.server.room.{kind}.{r}.message_updated, so frontend
+	// handlers that listen for MessageUpdatedEvent keep working.
 	subject := subjects.LiveRoomEvent(string(KindChannel), room.Id, "message_updated")
 	received := make(chan *nats.Msg, 1)
 	sub, err := nc.Subscribe(subject, func(msg *nats.Msg) {
@@ -199,7 +211,7 @@ func TestEditMessage_PublishesLiveEvent(t *testing.T) {
 			t.Errorf("MessageEventId = %q, want %q", updated.MessageEventId, event.Id)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for MessageUpdatedEvent on live subject")
+		t.Fatal("timed out waiting for MessageUpdatedEvent on live mirror subject")
 	}
 }
 
@@ -257,6 +269,12 @@ func TestStreamMyEvents_DeliversMessageDeleted(t *testing.T) {
 		t.Fatalf("DeleteMessage: %v", err)
 	}
 
+	// Post-#597 cutover: DeleteMessage writes a MessageRetractedEvent
+	// to EVT (durable) AND synthesises a legacy MessageDeletedEvent on
+	// live.server.room.{kind}.{r}.message_deleted via publishLiveServerEvent
+	// so the existing myEvents pipeline delivers it unchanged.
+	// StreamMyEvents subscribes to live.server.> only — the legacy
+	// mirror is what reaches the viewer.
 	timeout := time.After(2 * time.Second)
 	for {
 		select {
@@ -273,7 +291,7 @@ func TestStreamMyEvents_DeliversMessageDeleted(t *testing.T) {
 			}
 			return
 		case <-timeout:
-			t.Fatal("viewer never received MessageDeletedEvent — room-id extraction switch likely dropped it")
+			t.Fatal("viewer never received MessageDeletedEvent — live mirror / filterLiveEvent regressed")
 		}
 	}
 }

@@ -6,19 +6,8 @@ import (
 	"fmt"
 
 	"hmans.de/chatto/internal/core"
-	"hmans.de/chatto/internal/graph/auth"
 	corev1 "hmans.de/chatto/internal/pb/chatto/core/v1"
 )
-
-// callerID returns the authenticated user's ID from the GraphQL
-// context, or "" if no user is attached. Used by attachment URL
-// resolvers to bake the caller's identity into the signed URL.
-func callerID(ctx context.Context) string {
-	if u := auth.ForContext(ctx); u != nil {
-		return u.Id
-	}
-	return ""
-}
 
 // unwrapEvent extracts the concrete event payload from the proto
 // Event oneof wrapper. Returns nil for an empty envelope or an
@@ -63,6 +52,14 @@ func unwrapEvent(event *corev1.Event) any {
 		return e.MessageUpdated
 	case *corev1.Event_MessageDeleted:
 		return e.MessageDeleted
+
+	// Event_MessageEdited / Event_MessageRetracted (the durable EVT
+	// variants from #597) intentionally don't have a GraphQL surface
+	// here — producers (messages.go) emit a synthesised
+	// MessageUpdatedEvent / MessageDeletedEvent on the legacy live
+	// subject family so the frontend's existing handlers fire. The
+	// EVT events themselves only flow into the projection, not
+	// through the live channel.
 
 	// ---- Reactions ----
 	case *corev1.Event_ReactionAdded:
@@ -185,4 +182,3 @@ func unwrapEventAs[T any](event *corev1.Event, unionName string) (T, error) {
 	}
 	return typed, nil
 }
-

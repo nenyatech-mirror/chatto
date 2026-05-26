@@ -123,6 +123,24 @@ type ChattoCore struct {
 	// for WaitForSeq from layout writers.
 	RoomLayoutProjector *events.Projector
 
+	// RoomTimeline holds an append-only event log per room, derived
+	// from the full evt.room.> firehose (#597 phase 2). Source of
+	// truth for room timeline reads post-cutover.
+	RoomTimeline *RoomTimelineProjection
+
+	// RoomTimelineProjector runs the consumer for RoomTimeline.
+	// Exposed for WaitForSeq from message writers.
+	RoomTimelineProjector *events.Projector
+
+	// Threads holds an append-only event log per thread root,
+	// derived from the same evt.room.> firehose. Source of truth
+	// for thread-pane reads post-cutover.
+	Threads *ThreadProjection
+
+	// ThreadsProjector runs the consumer for Threads. Exposed for
+	// WaitForSeq from message writers that touch threads.
+	ThreadsProjector *events.Projector
+
 	// projectors is the set of all event-sourcing projectors owned by
 	// this core. Each new aggregate migration (ADR-035) appends here
 	// during NewChattoCore; Run iterates the slice. Adding a projector
@@ -535,6 +553,16 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 	roomLayout := NewRoomLayoutProjection()
 	roomLayoutProjector := newProjector(roomLayout, "RoomLayoutProjector")
 
+	// Per-room event-log + per-thread event-log projections (#597
+	// phase 2). Both consume the full evt.room.> firehose; resolvers
+	// do all filtering and rendering at query time. v1 shape — we
+	// iterate significantly on this once we observe read patterns.
+	roomTimeline := NewRoomTimelineProjection()
+	roomTimelineProjector := newProjector(roomTimeline, "RoomTimelineProjector")
+
+	threads := NewThreadProjection()
+	threadsProjector := newProjector(threads, "ThreadsProjector")
+
 	// ConfigManager owns server-config dual-writes; it needs the
 	// publisher (for ServerConfigChangedEvent), the projector
 	// (WaitForSeq for read-your-writes), and the projection (for reads).
@@ -560,6 +588,10 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 		RoomGroupsProjector:     roomGroupsProjector,
 		RoomLayout:              roomLayout,
 		RoomLayoutProjector:     roomLayoutProjector,
+		RoomTimeline:            roomTimeline,
+		RoomTimelineProjector:   roomTimelineProjector,
+		Threads:                 threads,
+		ThreadsProjector:        threadsProjector,
 		projectors:              projectors,
 		bootDone:                make(chan struct{}),
 	}
@@ -576,6 +608,7 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 	if err := migrations.RunAll(
 		ctx,
 		storage.serverKV, storage.serverConfigKV, storage.serverBodiesKV, storage.serverRuntimeKV, storage.runtimeConfigKV,
+		storage.serverEventsStream,
 		eventPublisher,
 		logger,
 	); err != nil {
@@ -1311,12 +1344,23 @@ func (c *ChattoCore) StreamMyEvents(ctx context.Context, userID string) (<-chan 
 		return nil, err
 	}
 
-	// Single live-subject subscription. The 256-message buffer absorbs
-	// reaction/typing bursts; on overflow NATS Core drops messages and
-	// transitions the subscription to SlowConsumer state — slowConsumerCh
-	// below catches that and tears the resolver down so the client can
-	// re-subscribe (and pick up missed history via the GraphQL catch-up
-	// path) rather than silently miss events.
+	// Single live-subject subscription on live.server.>. Aggregates
+	// that have already been migrated to EVT (room memberships, room
+	// groups, server config, room/thread messages from #614) still
+	// emit legacy mirrors on the live.server.> subject family, the
+	// same way RoomMembership and friends have done since #595. We
+	// deliberately do NOT subscribe to live.evt.> here even though the
+	// EVT stream's RePublish puts events on that subject root —
+	// subscribing to both would deliver every migrated event twice
+	// (once from each subject), flood the per-subscription channel
+	// under load, and tip subscriptions into SlowConsumer state.
+	//
+	// The 256-message buffer absorbs reaction/typing bursts; on
+	// overflow NATS Core drops messages and transitions the
+	// subscription to SlowConsumer state — slowConsumerCh below
+	// catches that and tears the resolver down so the client can
+	// re-subscribe (and pick up missed history via the GraphQL
+	// catch-up path) rather than silently miss events.
 	msgChan := make(chan *nats.Msg, 256)
 	liveSub, err := c.nc.ChanSubscribe(subjects.LiveAllEvents(), msgChan)
 	if err != nil {
@@ -1495,15 +1539,18 @@ func (c *ChattoCore) filterLiveEvent(ctx context.Context, userID string, canDM b
 		return nil, false
 	}
 
-	// Path 1: room-scoped events. Both JetStream republishes (msg, meta)
-	// and direct live publishes (reactions, typing, edits) share the
-	// `live.server.room.{kind}.{roomId}.…` shape, so a single membership
-	// check covers both.
+	// Path 1: room-scoped events on live.server.room.{kind}.{roomId}.…
+	// (both the legacy SERVER_EVENTS republish and ephemeral direct
+	// publishes from publishLiveServerEvent). EVT events that need to
+	// reach the frontend are mirrored to this same subject family by
+	// the producer (see room_membership.go, messages.go, etc.), so
+	// only one subject shape arrives here.
 	if kind := subjects.ParseKindFromRoomSubject(msg.Subject); kind != "" {
-		if !canDM && kind == string(KindDM) {
+		roomKind := kind
+		roomID := subjects.ParseRoomIDFromSubject(msg.Subject)
+		if !canDM && roomKind == string(KindDM) {
 			return nil, false
 		}
-		roomID := subjects.ParseRoomIDFromSubject(msg.Subject)
 		if roomID == "" {
 			return nil, false
 		}
