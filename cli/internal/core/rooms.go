@@ -397,7 +397,7 @@ func (c *ChattoCore) DeleteRoom(ctx context.Context, actorID string, kind RoomKi
 			},
 		},
 	})
-	seq, err := c.EventPublisher.Append(ctx, events.RoomAggregate(room_id).SubjectFor(event), event)
+	seq, err := c.EventPublisher.AppendEventually(ctx, events.RoomAggregate(room_id).SubjectFor(event), event)
 	if err != nil {
 		return fmt.Errorf("publish RoomDeletedEvent: %w", err)
 	}
@@ -415,7 +415,7 @@ func (c *ChattoCore) DeleteRoom(ctx context.Context, actorID string, kind RoomKi
 				},
 			},
 		})
-		groupRemovedSeq, err = c.EventPublisher.Append(ctx, events.GroupAggregate(room.GetGroupId()).SubjectFor(removed), removed)
+		groupRemovedSeq, err = c.EventPublisher.AppendEventually(ctx, events.GroupAggregate(room.GetGroupId()).SubjectFor(removed), removed)
 		if err != nil {
 			c.logger.Error("failed to publish RoomRemovedFromGroupEvent for delete cascade", "error", err, "room_id", room_id, "group_id", room.GetGroupId())
 		}
@@ -478,7 +478,7 @@ func (c *ChattoCore) ArchiveRoom(ctx context.Context, actorID string, kind RoomK
 			},
 		},
 	})
-	if _, err := c.RoomCatalogProjector.AppendAndWait(ctx, c.EventPublisher, events.RoomAggregate(roomID), archivedEvent); err != nil {
+	if _, err := c.RoomCatalogProjector.AppendEventuallyAndWait(ctx, c.EventPublisher, events.RoomAggregate(roomID), archivedEvent); err != nil {
 		return nil, fmt.Errorf("publish RoomArchivedEvent: %w", err)
 	}
 
@@ -513,7 +513,7 @@ func (c *ChattoCore) UnarchiveRoom(ctx context.Context, actorID string, kind Roo
 			},
 		},
 	})
-	if _, err := c.RoomCatalogProjector.AppendAndWait(ctx, c.EventPublisher, events.RoomAggregate(roomID), unarchivedEvent); err != nil {
+	if _, err := c.RoomCatalogProjector.AppendEventuallyAndWait(ctx, c.EventPublisher, events.RoomAggregate(roomID), unarchivedEvent); err != nil {
 		return nil, fmt.Errorf("publish RoomUnarchivedEvent: %w", err)
 	}
 
