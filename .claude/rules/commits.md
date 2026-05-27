@@ -2,10 +2,12 @@
 
 - Use conventional commits with a clear, descriptive message.
 - Use the commit description for a bullet list of changes made.
-- **Avoid `parens(in)` inside backtick code spans** in commit bodies (and squash-merge PR descriptions, which become the body). release-please's conventional-commits parser is markdown-unaware: a `` `func(...)` `` or `` `foo(bar)` `` inside a code span trips its state machine and the whole commit is silently dropped from version-bump consideration *and* the changelog (real example: PR #582 was missed because its body had `` `time.AfterFunc(5*time.Second, func() { ... })` ``). Rephrase to use a quoted string, a fenced code block, or natural prose without nested parens — anything that doesn't put `(` … `)` between backticks.
+- **Avoid `parens(in)` inside backtick code spans** in commit bodies (and squash-merge PR descriptions, which become the body). release-please's conventional-commits parser is markdown-unaware: a `` `func(...)` `` or `` `foo(bar)` `` inside a code span trips its state machine and the whole commit is silently dropped from version-bump consideration _and_ the changelog (real example: PR #582 was missed because its body had `` `time.AfterFunc(5*time.Second, func() { ... })` ``). Rephrase to use a quoted string, a fenced code block, or natural prose without nested parens — anything that doesn't put `(` … `)` between backticks.
 
 # Creating Pull Requests
 
+- Use Conventional Commit formatting for the PR title. Keep in mind that release-please makes version bump decisions based on this, so set breaking changes where adequate (and avoid otherwise.)
+- In the PR body, include a concise bullet-point summary of the changes and their motivation. If the PR addresses a GitHub issue, link it in the description (e.g., "Fixes #123").
 - After creating a PR, always check that CI passes. If CI fails, proactively diagnose and fix the failures without waiting to be asked.
 - **The baseline for test failures is ALWAYS `main`, never the previous commit on the branch.** If a test passes on `main` but fails on your branch, it is a regression you introduced and you MUST fix it. Do not dismiss a failure just because a previous commit on the same branch also had it. The only tests you may ignore are those that are also failing or flaky on `main`.
 - Common CI failure sources: broken tests from removed code paths, nil loggers in test setup, ESLint missing keys in Svelte `{#each}` blocks, and test selectors that are too broad.
@@ -34,4 +36,4 @@ This repo uses GitHub's modern issue features. Prefer them over hand-rolled chec
 - Use parent/child sub-issue relationships for any multi-PR effort. The parent issue gets a native progress bar driven by closed sub-issues — no manual checklist sync.
 - Create the parent first, then link children via `gh api graphql` with the `addSubIssue` mutation. The `subIssueId` is the GraphQL node ID (not the issue number); fetch it via `gh issue view <number> --json id`.
 - Sub-issues can span repos in the same org. Don't bundle unrelated work under one parent just because they share a theme — keep parents tight.
-- For epics, write the hub issue body to capture the *why* (motivation, key decisions, phase breakdown). Don't duplicate the per-sub-issue scope into the hub — the sub-issue list is the source of truth for what's left.
+- For epics, write the hub issue body to capture the _why_ (motivation, key decisions, phase breakdown). Don't duplicate the per-sub-issue scope into the hub — the sub-issue list is the source of truth for what's left.
