@@ -34,6 +34,12 @@ jobs:
         run: cd frontend && pnpm exec playwright install chromium --with-deps
         timeout-minutes: 5
 
+      - name: Run frontend typecheck
+        run: cd frontend && pnpm check
+
+      - name: Run frontend lint
+        run: cd frontend && pnpm lint
+
       - name: Run frontend unit tests
         run: cd frontend && pnpm vitest --run
 
