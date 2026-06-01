@@ -6,16 +6,13 @@ import (
 	"fmt"
 
 	"hmans.de/chatto/internal/core"
+	"hmans.de/chatto/internal/graph/model"
 	corev1 "hmans.de/chatto/internal/pb/chatto/core/v1"
 )
 
 // unwrapEvent extracts the concrete event payload from the proto
 // Event oneof wrapper. Returns nil for an empty envelope or an
 // unknown variant.
-//
-// For message events the wrapper's `Id` is copied into the payload's
-// `EventId` field so nested resolvers (reactions, thread metadata) can
-// reach it without re-traversing the envelope.
 func unwrapEvent(event *corev1.Event) any {
 	if event == nil || event.Event == nil {
 		return nil
@@ -44,9 +41,7 @@ func unwrapEvent(event *corev1.Event) any {
 
 	// ---- Messages ----
 	case *corev1.Event_MessagePosted:
-		// Populate EventId from wrapper for nested resolvers (reactions, thread metadata).
-		e.MessagePosted.EventId = event.Id
-		return e.MessagePosted
+		return &model.MessagePostedEvent{Envelope: event, Payload: e.MessagePosted, RoomID: e.MessagePosted.GetRoomId()}
 	case *corev1.Event_MessageEdited:
 		return e.MessageEdited
 	case *corev1.Event_MessageRetracted:
@@ -221,13 +216,9 @@ func assetProcessingFailureReasonCode(code corev1.AssetProcessingFailureCode) st
 	}
 }
 
-// unwrapEventAs unwraps a proto Event and asserts the payload to the
-// requested GraphQL union interface (model.RoomEventType or
-// model.ServerEventType). Returns a typed error for nil payloads and
-// for variants that don't belong to the requested union — the latter
-// is normal at the room-history boundary, where deployment-event
-// variants in the proto can't appear in stored room history but the
-// type system requires the assertion anyway.
+// unwrapEventAs unwraps a proto Event and asserts the payload to the requested
+// GraphQL union interface (model.EventType). Returns a typed error for nil or
+// unknown payloads.
 func unwrapEventAs[T any](event *corev1.Event, unionName string) (T, error) {
 	var zero T
 	unwrapped := unwrapEvent(event)

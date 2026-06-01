@@ -194,6 +194,53 @@ func (r *attachmentResolver) VideoProcessing(ctx context.Context, obj *corev1.At
 	return nil, nil
 }
 
+// Actor is the resolver for the actor field.
+func (r *eventResolver) Actor(ctx context.Context, obj *corev1.Event) (*corev1.User, error) {
+	return r.resolveEventActor(ctx, obj)
+}
+
+// Event is the resolver for the event field.
+func (r *eventResolver) Event(ctx context.Context, obj *corev1.Event) (model.EventType, error) {
+	return unwrapEventAs[model.EventType](obj, "EventType")
+}
+
+// ThreadReplies is the resolver for the threadReplies field.
+// Only message events that are themselves thread roots have replies; all
+// other event types (or thread replies) resolve to an empty list. Excludes
+// the root event itself — the caller already has it.
+func (r *eventResolver) ThreadReplies(ctx context.Context, obj *corev1.Event) ([]*corev1.Event, error) {
+	msg := obj.GetMessagePosted()
+	if msg == nil || msg.InThread != "" {
+		return []*corev1.Event{}, nil
+	}
+
+	user, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	kind, err := r.core.FindRoomKind(ctx, msg.RoomId)
+	if err != nil {
+		return nil, err
+	}
+	isMember, err := r.core.RoomMembershipExists(ctx, kind, user.Id, msg.RoomId)
+	if err != nil {
+		return nil, err
+	}
+	if !isMember {
+		return nil, core.ErrNotRoomMember
+	}
+
+	events, err := r.core.GetThreadEvents(ctx, kind, msg.RoomId, obj.Id)
+	if err != nil {
+		return nil, err
+	}
+	// GetThreadEvents returns [root, ...replies]; drop the root.
+	if len(events) > 0 {
+		return events[1:], nil
+	}
+	return events, nil
+}
+
 // Alive is the resolver for the alive field. Always true — clients only
 // need the event's arrival, not its contents.
 func (r *heartbeatEventResolver) Alive(ctx context.Context, obj *corev1.HeartbeatEvent) (bool, error) {
@@ -275,10 +322,12 @@ func (r *messageEditedEventResolver) UpdatedAt(ctx context.Context, obj *corev1.
 }
 
 // Body is the resolver for the body field.
-// Lazy-loads the message body from the KV bucket using the message body ID.
-// Returns nil if the message has been deleted (GDPR).
-func (r *messagePostedEventResolver) Body(ctx context.Context, obj *corev1.MessagePostedEvent) (*string, error) {
-	kind, err := r.core.FindRoomKind(ctx, obj.RoomId)
+func (r *messagePostedEventResolver) Body(ctx context.Context, obj *model.MessagePostedEvent) (*string, error) {
+	payload := messagePostedPayload(obj)
+	if payload == nil {
+		return nil, nil
+	}
+	kind, err := r.core.FindRoomKind(ctx, payload.RoomId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve room kind: %w", err)
 	}
@@ -293,9 +342,12 @@ func (r *messagePostedEventResolver) Body(ctx context.Context, obj *corev1.Messa
 }
 
 // Attachments is the resolver for the attachments field.
-// Lazy-loads attachments from the MessageBody in the KV bucket.
-func (r *messagePostedEventResolver) Attachments(ctx context.Context, obj *corev1.MessagePostedEvent) ([]*corev1.Attachment, error) {
-	kind, err := r.core.FindRoomKind(ctx, obj.RoomId)
+func (r *messagePostedEventResolver) Attachments(ctx context.Context, obj *model.MessagePostedEvent) ([]*corev1.Attachment, error) {
+	payload := messagePostedPayload(obj)
+	if payload == nil {
+		return []*corev1.Attachment{}, nil
+	}
+	kind, err := r.core.FindRoomKind(ctx, payload.RoomId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve room kind: %w", err)
 	}
@@ -313,7 +365,7 @@ func (r *messagePostedEventResolver) Attachments(ctx context.Context, obj *corev
 		if att == nil {
 			continue
 		}
-		att.RoomId = obj.RoomId
+		att.RoomId = payload.RoomId
 		if att.MessageBodyId == "" {
 			att.MessageBodyId = bodyKeyForLookup(obj)
 		}
@@ -324,37 +376,39 @@ func (r *messagePostedEventResolver) Attachments(ctx context.Context, obj *corev
 
 // InReplyTo is the resolver for the inReplyTo field.
 // Returns the event ID of the parent message, or nil for top-level messages.
-func (r *messagePostedEventResolver) InReplyTo(ctx context.Context, obj *corev1.MessagePostedEvent) (*string, error) {
-	if obj.InReplyTo == "" {
+func (r *messagePostedEventResolver) InReplyTo(ctx context.Context, obj *model.MessagePostedEvent) (*string, error) {
+	payload := messagePostedPayload(obj)
+	if payload == nil || payload.InReplyTo == "" {
 		return nil, nil
 	}
-	return &obj.InReplyTo, nil
+	return &payload.InReplyTo, nil
 }
 
 // ThreadRootEventID is the resolver for the threadRootEventId field.
-func (r *messagePostedEventResolver) ThreadRootEventID(ctx context.Context, obj *corev1.MessagePostedEvent) (*string, error) {
-	if obj.InThread == "" {
+func (r *messagePostedEventResolver) ThreadRootEventID(ctx context.Context, obj *model.MessagePostedEvent) (*string, error) {
+	payload := messagePostedPayload(obj)
+	if payload == nil || payload.InThread == "" {
 		return nil, nil
 	}
-	return &obj.InThread, nil
+	return &payload.InThread, nil
 }
 
 // Reactions is the resolver for the reactions field.
 // Authorization: parent query (Room.events / Room.event) already verified room membership.
-// For echo messages, reactions are resolved using the original message's event ID
-// so that echoes and their originals share the same reactions.
-func (r *messagePostedEventResolver) Reactions(ctx context.Context, obj *corev1.MessagePostedEvent) ([]*model.Reaction, error) {
-	eventID := obj.EventId
-	if obj.EchoOfEventId != "" {
-		eventID = obj.EchoOfEventId
-	}
+// Reactions are keyed by the message event envelope ID, so echoes and their
+// originals accumulate reactions independently.
+func (r *messagePostedEventResolver) Reactions(ctx context.Context, obj *model.MessagePostedEvent) ([]*model.Reaction, error) {
+	eventID := messagePostedEventID(obj)
 	return r.resolveReactions(ctx, eventID)
 }
 
 // UpdatedAt is the resolver for the updatedAt field.
-// Lazy-loads the updated_at timestamp from the message body. Returns nil if never edited.
-func (r *messagePostedEventResolver) UpdatedAt(ctx context.Context, obj *corev1.MessagePostedEvent) (*timestamppb.Timestamp, error) {
-	kind, err := r.core.FindRoomKind(ctx, obj.RoomId)
+func (r *messagePostedEventResolver) UpdatedAt(ctx context.Context, obj *model.MessagePostedEvent) (*timestamppb.Timestamp, error) {
+	payload := messagePostedPayload(obj)
+	if payload == nil {
+		return nil, nil
+	}
+	kind, err := r.core.FindRoomKind(ctx, payload.RoomId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve room kind: %w", err)
 	}
@@ -370,40 +424,44 @@ func (r *messagePostedEventResolver) UpdatedAt(ctx context.Context, obj *corev1.
 
 // EchoOfEventID is the resolver for the echoOfEventId field.
 // Returns the event ID of the original thread reply this echoes, or nil for non-echo messages.
-func (r *messagePostedEventResolver) EchoOfEventID(ctx context.Context, obj *corev1.MessagePostedEvent) (*string, error) {
-	if obj.EchoOfEventId == "" {
+func (r *messagePostedEventResolver) EchoOfEventID(ctx context.Context, obj *model.MessagePostedEvent) (*string, error) {
+	payload := messagePostedPayload(obj)
+	if payload == nil || payload.EchoOfEventId == "" {
 		return nil, nil
 	}
-	return &obj.EchoOfEventId, nil
+	return &payload.EchoOfEventId, nil
 }
 
 // EchoFromThreadRootEventID is the resolver for the echoFromThreadRootEventId field.
-func (r *messagePostedEventResolver) EchoFromThreadRootEventID(ctx context.Context, obj *corev1.MessagePostedEvent) (*string, error) {
-	if obj.EchoFromThreadRootEventId == "" {
+func (r *messagePostedEventResolver) EchoFromThreadRootEventID(ctx context.Context, obj *model.MessagePostedEvent) (*string, error) {
+	payload := messagePostedPayload(obj)
+	if payload == nil || payload.EchoFromThreadRootEventId == "" {
 		return nil, nil
 	}
-	return &obj.EchoFromThreadRootEventId, nil
+	return &payload.EchoFromThreadRootEventId, nil
 }
 
 // ReplyCount is the resolver for the replyCount field.
 // Returns 0 for thread replies (non-root). For root messages, computes count on-demand.
-func (r *messagePostedEventResolver) ReplyCount(ctx context.Context, obj *corev1.MessagePostedEvent) (int32, error) {
+func (r *messagePostedEventResolver) ReplyCount(ctx context.Context, obj *model.MessagePostedEvent) (int32, error) {
+	payload := messagePostedPayload(obj)
 	// Thread replies don't have their own replies (flat threading).
 	// Check InThread (thread membership), not InReplyTo (room-level reply attribution).
-	if obj.InThread != "" {
+	if payload == nil || payload.InThread != "" {
 		return 0, nil
 	}
+	eventID := messagePostedEventID(obj)
 
 	// For root messages, get thread metadata using event ID
-	kind, err := r.core.FindRoomKind(ctx, obj.RoomId)
+	kind, err := r.core.FindRoomKind(ctx, payload.RoomId)
 	if err != nil {
-		r.logger.Debug("Failed to resolve room kind for replyCount", "error", err, "event_id", obj.EventId)
+		r.logger.Debug("Failed to resolve room kind for replyCount", "error", err, "event_id", eventID)
 		return 0, nil
 	}
-	metadata, err := r.core.GetThreadMetadata(ctx, kind, obj.RoomId, obj.EventId)
+	metadata, err := r.core.GetThreadMetadata(ctx, kind, payload.RoomId, eventID)
 	if err != nil {
 		// Log but don't fail - return 0 as fallback
-		r.logger.Debug("Failed to get thread metadata for replyCount", "error", err, "event_id", obj.EventId)
+		r.logger.Debug("Failed to get thread metadata for replyCount", "error", err, "event_id", eventID)
 		return 0, nil
 	}
 
@@ -412,23 +470,25 @@ func (r *messagePostedEventResolver) ReplyCount(ctx context.Context, obj *corev1
 
 // LastReplyAt is the resolver for the lastReplyAt field.
 // Returns nil for thread replies (non-root) or root messages without replies.
-func (r *messagePostedEventResolver) LastReplyAt(ctx context.Context, obj *corev1.MessagePostedEvent) (*timestamppb.Timestamp, error) {
+func (r *messagePostedEventResolver) LastReplyAt(ctx context.Context, obj *model.MessagePostedEvent) (*timestamppb.Timestamp, error) {
+	payload := messagePostedPayload(obj)
 	// Thread replies don't have their own replies (flat threading).
 	// Check InThread (thread membership), not InReplyTo (room-level reply attribution).
-	if obj.InThread != "" {
+	if payload == nil || payload.InThread != "" {
 		return nil, nil
 	}
+	eventID := messagePostedEventID(obj)
 
 	// For root messages, get thread metadata using event ID
-	kind, err := r.core.FindRoomKind(ctx, obj.RoomId)
+	kind, err := r.core.FindRoomKind(ctx, payload.RoomId)
 	if err != nil {
-		r.logger.Debug("Failed to resolve room kind for lastReplyAt", "error", err, "event_id", obj.EventId)
+		r.logger.Debug("Failed to resolve room kind for lastReplyAt", "error", err, "event_id", eventID)
 		return nil, nil
 	}
-	metadata, err := r.core.GetThreadMetadata(ctx, kind, obj.RoomId, obj.EventId)
+	metadata, err := r.core.GetThreadMetadata(ctx, kind, payload.RoomId, eventID)
 	if err != nil {
 		// Log but don't fail - return nil as fallback
-		r.logger.Debug("Failed to get thread metadata for lastReplyAt", "error", err, "event_id", obj.EventId)
+		r.logger.Debug("Failed to get thread metadata for lastReplyAt", "error", err, "event_id", eventID)
 		return nil, nil
 	}
 
@@ -441,22 +501,24 @@ func (r *messagePostedEventResolver) LastReplyAt(ctx context.Context, obj *corev
 // ThreadParticipants is the resolver for the threadParticipants field.
 // Returns empty array for thread replies (non-root) or root messages without replies.
 // For root messages with replies, returns up to `first` users who have replied.
-func (r *messagePostedEventResolver) ThreadParticipants(ctx context.Context, obj *corev1.MessagePostedEvent, first *int32) ([]*corev1.User, error) {
+func (r *messagePostedEventResolver) ThreadParticipants(ctx context.Context, obj *model.MessagePostedEvent, first *int32) ([]*corev1.User, error) {
+	payload := messagePostedPayload(obj)
 	// Thread replies don't have their own replies (flat threading).
 	// Check InThread (thread membership), not InReplyTo (room-level reply attribution).
-	if obj.InThread != "" {
+	if payload == nil || payload.InThread != "" {
 		return []*corev1.User{}, nil
 	}
+	eventID := messagePostedEventID(obj)
 
 	// For root messages, get thread metadata using event ID
-	kind, err := r.core.FindRoomKind(ctx, obj.RoomId)
+	kind, err := r.core.FindRoomKind(ctx, payload.RoomId)
 	if err != nil {
-		r.logger.Debug("Failed to resolve room kind for threadParticipants", "error", err, "event_id", obj.EventId)
+		r.logger.Debug("Failed to resolve room kind for threadParticipants", "error", err, "event_id", eventID)
 		return []*corev1.User{}, nil
 	}
-	metadata, err := r.core.GetThreadMetadata(ctx, kind, obj.RoomId, obj.EventId)
+	metadata, err := r.core.GetThreadMetadata(ctx, kind, payload.RoomId, eventID)
 	if err != nil {
-		r.logger.Debug("Failed to get thread metadata for threadParticipants", "error", err, "event_id", obj.EventId)
+		r.logger.Debug("Failed to get thread metadata for threadParticipants", "error", err, "event_id", eventID)
 		return []*corev1.User{}, nil
 	}
 
@@ -495,10 +557,11 @@ func (r *messagePostedEventResolver) ThreadParticipants(ctx context.Context, obj
 // ViewerIsFollowingThread is the resolver for the viewerIsFollowingThread field.
 // Returns nil for non-root messages (replies). For root messages, returns whether the
 // current user is following the thread.
-func (r *messagePostedEventResolver) ViewerIsFollowingThread(ctx context.Context, obj *corev1.MessagePostedEvent) (*bool, error) {
+func (r *messagePostedEventResolver) ViewerIsFollowingThread(ctx context.Context, obj *model.MessagePostedEvent) (*bool, error) {
+	payload := messagePostedPayload(obj)
 	// Non-root messages can't be followed.
 	// Check InThread (thread membership), not InReplyTo (room-level reply attribution).
-	if obj.InThread != "" {
+	if payload == nil || payload.InThread != "" {
 		return nil, nil
 	}
 
@@ -506,15 +569,16 @@ func (r *messagePostedEventResolver) ViewerIsFollowingThread(ctx context.Context
 	if currentUser == nil {
 		return nil, nil
 	}
+	eventID := messagePostedEventID(obj)
 
-	kind, err := r.core.FindRoomKind(ctx, obj.RoomId)
+	kind, err := r.core.FindRoomKind(ctx, payload.RoomId)
 	if err != nil {
-		r.logger.Debug("Failed to resolve room kind for viewerIsFollowingThread", "error", err, "event_id", obj.EventId)
+		r.logger.Debug("Failed to resolve room kind for viewerIsFollowingThread", "error", err, "event_id", eventID)
 		return nil, nil
 	}
-	isFollowing, err := r.core.IsFollowingThread(ctx, kind, currentUser.Id, obj.RoomId, obj.EventId)
+	isFollowing, err := r.core.IsFollowingThread(ctx, kind, currentUser.Id, payload.RoomId, eventID)
 	if err != nil {
-		r.logger.Debug("Failed to check thread follow status", "error", err, "event_id", obj.EventId)
+		r.logger.Debug("Failed to check thread follow status", "error", err, "event_id", eventID)
 		return nil, nil
 	}
 
@@ -611,68 +675,10 @@ func (r *presenceChangedEventResolver) Status(ctx context.Context, obj *corev1.P
 	return model.PresenceStatus(obj.Status), nil
 }
 
-// Actor is the resolver for the actor field.
-func (r *roomEventResolver) Actor(ctx context.Context, obj *corev1.Event) (*corev1.User, error) {
-	return r.resolveEventActor(ctx, obj)
-}
-
-// Event is the resolver for the event field.
-func (r *roomEventResolver) Event(ctx context.Context, obj *corev1.Event) (model.RoomEventType, error) {
-	return unwrapEventAs[model.RoomEventType](obj, "RoomEventType")
-}
-
-// ThreadReplies is the resolver for the threadReplies field.
-// Only message events that are themselves thread roots have replies; all
-// other event types (or thread replies) resolve to an empty list. Excludes
-// the root event itself — the caller already has it.
-func (r *roomEventResolver) ThreadReplies(ctx context.Context, obj *corev1.Event) ([]*corev1.Event, error) {
-	msg := obj.GetMessagePosted()
-	if msg == nil || msg.InThread != "" {
-		return []*corev1.Event{}, nil
-	}
-
-	user, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	kind, err := r.core.FindRoomKind(ctx, msg.RoomId)
-	if err != nil {
-		return nil, err
-	}
-	isMember, err := r.core.RoomMembershipExists(ctx, kind, user.Id, msg.RoomId)
-	if err != nil {
-		return nil, err
-	}
-	if !isMember {
-		return nil, core.ErrNotRoomMember
-	}
-
-	events, err := r.core.GetThreadEvents(ctx, kind, msg.RoomId, obj.Id)
-	if err != nil {
-		return nil, err
-	}
-	// GetThreadEvents returns [root, ...replies]; drop the root.
-	if len(events) > 0 {
-		return events[1:], nil
-	}
-	return events, nil
-}
-
 // Changed is the resolver for the changed field. Vestigial — the event's
 // arrival is the signal; clients refetch Server.roomGroups.
 func (r *roomGroupsUpdatedEventResolver) Changed(ctx context.Context, obj *corev1.RoomGroupsUpdatedEvent) (bool, error) {
 	return true, nil
-}
-
-// Actor is the resolver for the actor field.
-func (r *serverEventResolver) Actor(ctx context.Context, obj *corev1.Event) (*corev1.User, error) {
-	return r.resolveEventActor(ctx, obj)
-}
-
-// Event is the resolver for the event field. Unwraps the proto oneof to
-// the concrete event type so gqlgen's union dispatcher can serialise it.
-func (r *serverEventResolver) Event(ctx context.Context, obj *corev1.Event) (model.ServerEventType, error) {
-	return unwrapEventAs[model.ServerEventType](obj, "ServerEventType")
 }
 
 // TimeFormat is the resolver for the timeFormat field.
@@ -744,6 +750,9 @@ func (r *Resolver) AssetProcessingSucceededEvent() AssetProcessingSucceededEvent
 // Attachment returns AttachmentResolver implementation.
 func (r *Resolver) Attachment() AttachmentResolver { return &attachmentResolver{r} }
 
+// Event returns EventResolver implementation.
+func (r *Resolver) Event() EventResolver { return &eventResolver{r} }
+
 // HeartbeatEvent returns HeartbeatEventResolver implementation.
 func (r *Resolver) HeartbeatEvent() HeartbeatEventResolver { return &heartbeatEventResolver{r} }
 
@@ -792,16 +801,10 @@ func (r *Resolver) PresenceChangedEvent() PresenceChangedEventResolver {
 	return &presenceChangedEventResolver{r}
 }
 
-// RoomEvent returns RoomEventResolver implementation.
-func (r *Resolver) RoomEvent() RoomEventResolver { return &roomEventResolver{r} }
-
 // RoomGroupsUpdatedEvent returns RoomGroupsUpdatedEventResolver implementation.
 func (r *Resolver) RoomGroupsUpdatedEvent() RoomGroupsUpdatedEventResolver {
 	return &roomGroupsUpdatedEventResolver{r}
 }
-
-// ServerEvent returns ServerEventResolver implementation.
-func (r *Resolver) ServerEvent() ServerEventResolver { return &serverEventResolver{r} }
 
 // ServerUserPreferencesUpdatedEvent returns ServerUserPreferencesUpdatedEventResolver implementation.
 func (r *Resolver) ServerUserPreferencesUpdatedEvent() ServerUserPreferencesUpdatedEventResolver {
@@ -824,6 +827,7 @@ type assetProcessingFailedEventResolver struct{ *Resolver }
 type assetProcessingStartedEventResolver struct{ *Resolver }
 type assetProcessingSucceededEventResolver struct{ *Resolver }
 type attachmentResolver struct{ *Resolver }
+type eventResolver struct{ *Resolver }
 type heartbeatEventResolver struct{ *Resolver }
 type mentionNotificationEventResolver struct{ *Resolver }
 type messageDeletedEventResolver struct{ *Resolver }
@@ -834,9 +838,7 @@ type messageUpdatedEventResolver struct{ *Resolver }
 type newDirectMessageNotificationEventResolver struct{ *Resolver }
 type notificationLevelChangedEventResolver struct{ *Resolver }
 type presenceChangedEventResolver struct{ *Resolver }
-type roomEventResolver struct{ *Resolver }
 type roomGroupsUpdatedEventResolver struct{ *Resolver }
-type serverEventResolver struct{ *Resolver }
 type serverUserPreferencesUpdatedEventResolver struct{ *Resolver }
 type videoProcessingResolver struct{ *Resolver }
 type videoProcessingCompletedEventResolver struct{ *Resolver }
