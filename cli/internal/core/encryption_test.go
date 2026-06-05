@@ -72,15 +72,15 @@ func TestPostMessage_EncryptsMessageBody(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, event)
 
-	// Post-#597 cutover: the body is embedded in the MessagePostedEvent
-	// payload, not stored separately in SERVER_BODIES. Inspect the
-	// embedded MessageBody directly.
-	stored := event.GetMessagePosted().GetBody()
-	require.NotNil(t, stored, "expected embedded body on the published event")
+	stored, retracted, ok := core.RoomTimeline.LatestBody(event.Id)
+	require.True(t, ok, "expected message to be projected")
+	require.False(t, retracted, "new message should not be retracted")
+	require.NotNil(t, stored, "expected projected body from MessageBodyEvent")
 	require.NotEmpty(t, stored.EncryptedBody, "encrypted body should not be empty")
 	require.NotEmpty(t, stored.EncryptionNonce, "nonce should not be empty")
 	require.Equal(t, encryption.EnvelopeVersionV2, stored.EncryptionVersion, "new messages should use v2 envelopes")
 	require.EqualValues(t, 1, stored.ContentKeyEpoch, "new messages should reference the active message-body DEK epoch")
+	require.NotEmpty(t, stored.BodyEventId, "new body-event-carried bodies should bind to their body event")
 
 	contentKeyEvents, _, err := core.EventPublisher.SubjectEvents(ctx, events.UserAggregate(user.Id).Subject(events.EventUserDEKGenerated))
 	require.NoError(t, err)
@@ -116,7 +116,9 @@ func TestMessageBodyV2AADRejectsWrongEventContext(t *testing.T) {
 
 	event, err := core.PostMessage(ctx, KindChannel, room.Id, user.Id, "Bound to one event", nil, "", "", nil, false)
 	require.NoError(t, err)
-	stored := event.GetMessagePosted().GetBody()
+	stored, retracted, ok := core.RoomTimeline.LatestBody(event.Id)
+	require.True(t, ok)
+	require.False(t, retracted)
 	require.NotNil(t, stored)
 
 	plaintext, err := core.decryptMessageBody(ctx, event.Id, room.Id, stored)
@@ -128,6 +130,29 @@ func TestMessageBodyV2AADRejectsWrongEventContext(t *testing.T) {
 
 	_, err = core.decryptMessageBody(ctx, event.Id, "RtamperedRoomID", stored)
 	require.ErrorIs(t, err, encryption.ErrDecryptionFailed)
+
+	t.Run("tampered body event ID", func(t *testing.T) {
+		tampered := proto.Clone(stored).(*corev1.MessageBody)
+		tampered.BodyEventId = "EtamperedBodyEventID"
+		_, err := core.decryptMessageBody(ctx, event.Id, room.Id, tampered)
+		require.ErrorIs(t, err, encryption.ErrDecryptionFailed)
+	})
+
+	t.Run("tampered body nonce", func(t *testing.T) {
+		tampered := proto.Clone(stored).(*corev1.MessageBody)
+		tampered.EncryptionNonce = append([]byte(nil), tampered.GetEncryptionNonce()...)
+		tampered.EncryptionNonce[0] ^= 0xff
+		_, err := core.decryptMessageBody(ctx, event.Id, room.Id, tampered)
+		require.ErrorIs(t, err, encryption.ErrDecryptionFailed)
+	})
+
+	t.Run("tampered ciphertext", func(t *testing.T) {
+		tampered := proto.Clone(stored).(*corev1.MessageBody)
+		tampered.EncryptedBody = append([]byte(nil), tampered.GetEncryptedBody()...)
+		tampered.EncryptedBody[0] ^= 0xff
+		_, err := core.decryptMessageBody(ctx, event.Id, room.Id, tampered)
+		require.ErrorIs(t, err, encryption.ErrDecryptionFailed)
+	})
 }
 
 func TestUserPIIEvents_AreEncryptedAndProjectable(t *testing.T) {

@@ -1164,13 +1164,12 @@ func (x *Attachment) GetMessageBodyId() string {
 	return ""
 }
 
-// MessageBody stores the actual content of a message.
-// Stored separately from events in KV buckets for GDPR compliance.
-// This allows individual message bodies to be deleted while preserving
-// the audit trail in the event stream.
-// Message bodies are always encrypted. Legacy bodies use the author's
-// per-user ChaCha20-Poly1305 key directly. New bodies use a versioned
-// envelope with a per-user message-body DEK epoch.
+// MessageBody stores the encrypted content and body-owned metadata of a
+// message. New bodies are carried by MessageBodyEvent so the encrypted
+// payload can be securely deleted while preserving public timeline facts.
+// Message bodies are always encrypted. Legacy bodies use the author's per-user
+// ChaCha20-Poly1305 key directly. V2 bodies use a per-user message-body DEK
+// epoch directly.
 type MessageBody struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	AuthorId  string                 `protobuf:"bytes,1,opt,name=author_id,json=authorId,proto3" json:"author_id,omitempty"`
@@ -1181,11 +1180,15 @@ type MessageBody struct {
 	// means XChaCha20-Poly1305 body encryption with the author's referenced
 	// message-body DEK epoch.
 	EncryptionVersion int32 `protobuf:"varint,4,opt,name=encryption_version,json=encryptionVersion,proto3" json:"encryption_version,omitempty"`
-	// V2 only: per-user message-body DEK epoch that encrypted this body.
+	// V2: per-user message-body DEK epoch that encrypted this body.
 	ContentKeyEpoch int32 `protobuf:"varint,5,opt,name=content_key_epoch,json=contentKeyEpoch,proto3" json:"content_key_epoch,omitempty"`
+	// Event envelope ID of the MessageBodyEvent carrying this body. Included in
+	// AAD for new body-event-carried bodies to prevent replaying old encrypted
+	// body payloads under new body events.
+	BodyEventId string `protobuf:"bytes,6,opt,name=body_event_id,json=bodyEventId,proto3" json:"body_event_id,omitempty"`
 	// Encrypted message body ciphertext with auth tag. For legacy bodies this
-	// is ChaCha20-Poly1305. For v2 envelope bodies this is XChaCha20-Poly1305
-	// using the referenced message-body DEK.
+	// is ChaCha20-Poly1305. For v2 envelope bodies this uses the referenced
+	// message-body DEK.
 	EncryptedBody []byte `protobuf:"bytes,20,opt,name=encrypted_body,json=encryptedBody,proto3" json:"encrypted_body,omitempty"`
 	// Nonce for encrypted_body: 12 bytes for legacy ChaCha20-Poly1305, 24 bytes
 	// for v2 XChaCha20-Poly1305.
@@ -1271,6 +1274,13 @@ func (x *MessageBody) GetContentKeyEpoch() int32 {
 		return x.ContentKeyEpoch
 	}
 	return 0
+}
+
+func (x *MessageBody) GetBodyEventId() string {
+	if x != nil {
+		return x.BodyEventId
+	}
+	return ""
 }
 
 func (x *MessageBody) GetEncryptedBody() []byte {
@@ -1938,7 +1948,7 @@ const file_chatto_core_v1_models_proto_rawDesc = "" +
 	"\x06height\x18\b \x01(\x05R\x06height\x129\n" +
 	"\astorage\x18\t \x01(\v2\x1f.chatto.core.v1.DeprecatedAssetR\astorage\x12&\n" +
 	"\x0fmessage_body_id\x18\n" +
-	" \x01(\tR\rmessageBodyIdJ\x04\b\x02\x10\x03R\bspace_id\"\xe8\x03\n" +
+	" \x01(\tR\rmessageBodyIdJ\x04\b\x02\x10\x03R\bspace_id\"\x8c\x04\n" +
 	"\vMessageBody\x12\x1b\n" +
 	"\tauthor_id\x18\x01 \x01(\tR\bauthorId\x129\n" +
 	"\n" +
@@ -1946,7 +1956,8 @@ const file_chatto_core_v1_models_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12-\n" +
 	"\x12encryption_version\x18\x04 \x01(\x05R\x11encryptionVersion\x12*\n" +
-	"\x11content_key_epoch\x18\x05 \x01(\x05R\x0fcontentKeyEpoch\x12%\n" +
+	"\x11content_key_epoch\x18\x05 \x01(\x05R\x0fcontentKeyEpoch\x12\"\n" +
+	"\rbody_event_id\x18\x06 \x01(\tR\vbodyEventId\x12%\n" +
 	"\x0eencrypted_body\x18\x14 \x01(\fR\rencryptedBody\x12)\n" +
 	"\x10encryption_nonce\x18\x15 \x01(\fR\x0fencryptionNonce\x12<\n" +
 	"\vattachments\x18\x1e \x03(\v2\x1a.chatto.core.v1.AttachmentR\vattachments\x12\x1b\n" +

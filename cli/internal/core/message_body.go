@@ -125,16 +125,19 @@ func (c *ChattoCore) GetMessageAuthorID(ctx context.Context, kind RoomKind, mess
 }
 
 // decryptMessageBody decrypts an encrypted message body. Legacy bodies are
-// decrypted directly with the author's per-user key; v2 bodies resolve the
+// decrypted directly with the author's per-user key. V2 bodies resolve the
 // author's message-body DEK epoch and authenticate the event context as AAD.
+// Bodies carried by MessageBodyEvent additionally bind the body event envelope
+// ID into AAD so payloads cannot be replayed under a different body event.
 func (c *ChattoCore) decryptMessageBody(ctx context.Context, eventID, roomID string, msg *corev1.MessageBody) ([]byte, error) {
 	if msg.GetEncryptionVersion() >= encryption.EnvelopeVersionV2 || msg.GetContentKeyEpoch() > 0 {
-		if version := msg.GetEncryptionVersion(); version != encryption.EnvelopeVersionV2 {
+		version := msg.GetEncryptionVersion()
+		if version != encryption.EnvelopeVersionV2 {
 			return nil, fmt.Errorf("unsupported message body encryption version %d", version)
 		}
 		epoch := msg.GetContentKeyEpoch()
 		if epoch <= 0 {
-			return nil, fmt.Errorf("missing content key epoch for v2 message body")
+			return nil, fmt.Errorf("missing content key epoch for v%d message body", version)
 		}
 		contentKeyEvent, ok := c.ContentKeys.Get(msg.GetAuthorId(), corev1.UserDEKPurpose_USER_DEK_PURPOSE_MESSAGE_BODY, epoch)
 		if !ok {
@@ -148,7 +151,7 @@ func (c *ChattoCore) decryptMessageBody(ctx context.Context, eventID, roomID str
 			contentKey.key,
 			msg.GetEncryptedBody(),
 			msg.GetEncryptionNonce(),
-			messageBodyAAD(eventID, roomID, msg.GetAuthorId(), epoch),
+			messageBodyAAD(eventID, msg.GetBodyEventId(), roomID, msg.GetAuthorId(), epoch),
 		)
 	}
 

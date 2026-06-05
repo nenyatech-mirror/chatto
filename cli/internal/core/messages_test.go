@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
 	"hmans.de/chatto/internal/encryption"
+	"hmans.de/chatto/internal/events"
 	corev1 "hmans.de/chatto/internal/pb/chatto/core/v1"
 )
 
@@ -45,7 +47,7 @@ func TestChattoCore_PostMessage(t *testing.T) {
 		t.Errorf("MessagePosted.RoomId = %s, want %s", messagePosted.RoomId, room.Id)
 	}
 
-	// Body is now lazy-loaded, fetch it separately using messageBodyId
+	// Body is lazy-loaded from the body projection using the message event ID.
 	fetchedBody, err := core.GetMessageBody(ctx, KindChannel, roomEvent.Id)
 	if err != nil {
 		t.Fatalf("Failed to fetch message body: %v", err)
@@ -95,7 +97,7 @@ func TestChattoCore_PostMessageSchedulesVideoProcessing(t *testing.T) {
 	}
 }
 
-func TestChattoCore_PostMessage_BodyStoredInKV(t *testing.T) {
+func TestChattoCore_PostMessage_BodyStoredInMessageBodyEvent(t *testing.T) {
 	core, _ := setupTestCore(t)
 	ctx := testContext(t)
 
@@ -119,7 +121,7 @@ func TestChattoCore_PostMessage_BodyStoredInKV(t *testing.T) {
 		t.Fatal("Event should be a MessagePosted event")
 	}
 
-	// Verify the body can be fetched via GetMessageBody using messageBodyId
+	// Verify the body can be fetched via GetMessageBody using the message event ID.
 	fetchedBody, err := core.GetMessageBody(ctx, KindChannel, roomEvent.Id)
 	if err != nil {
 		t.Fatalf("Failed to fetch message body: %v", err)
@@ -128,14 +130,9 @@ func TestChattoCore_PostMessage_BodyStoredInKV(t *testing.T) {
 		t.Errorf("Message body = %s, want %s", fetchedBody, messageBody)
 	}
 
-	// Post-#597 cutover: the body lives embedded in the event payload
-	// on the EVT stream, not in a separate SERVER_BODIES KV entry.
-	// Recover it through the projection-backed GetFullMessageBody and
-	// then verify the encryption envelope by peeking at the body
-	// embedded on the MessagePostedEvent we just received back.
-	storedBody := roomEvent.GetMessagePosted().GetBody()
-	if storedBody == nil {
-		t.Fatal("Expected message body to be embedded on the published event")
+	storedBody, retracted, ok := core.RoomTimeline.LatestBody(roomEvent.Id)
+	if !ok || retracted || storedBody == nil {
+		t.Fatal("Expected projected message body from MessageBodyEvent")
 	}
 
 	// Messages are always encrypted - verify encrypted fields are set
@@ -151,7 +148,9 @@ func TestChattoCore_PostMessage_BodyStoredInKV(t *testing.T) {
 	if storedBody.ContentKeyEpoch != 1 {
 		t.Errorf("ContentKeyEpoch = %d, want 1", storedBody.ContentKeyEpoch)
 	}
-
+	if storedBody.BodyEventId == "" {
+		t.Error("BodyEventId should be set")
+	}
 	// Verify timestamps are set correctly
 	if storedBody.CreatedAt == nil {
 		t.Error("CreatedAt should be set")
@@ -159,6 +158,114 @@ func TestChattoCore_PostMessage_BodyStoredInKV(t *testing.T) {
 	// UpdatedAt should be nil for new messages (only set when message is edited)
 	if storedBody.UpdatedAt != nil {
 		t.Error("UpdatedAt should be nil for new messages")
+	}
+}
+
+func TestChattoCore_MessageBodyEventsKeepPublicEventsBodyless(t *testing.T) {
+	core, _ := setupTestCore(t)
+	ctx := testContext(t)
+
+	room, _ := core.CreateRoom(ctx, "test-user", KindChannel, "", "General", "General discussion")
+	user, _ := core.CreateUser(ctx, "system", "bodyless-user", "Bodyless User", "password123")
+	core.JoinRoom(ctx, user.Id, KindChannel, user.Id, room.Id)
+
+	posted, err := core.PostMessage(ctx, KindChannel, room.Id, user.Id, "private body payload", nil, "", "", nil, false)
+	if err != nil {
+		t.Fatalf("PostMessage: %v", err)
+	}
+	if posted.GetMessagePosted().GetBody() != nil {
+		t.Fatal("new MessagePostedEvent should be bodyless")
+	}
+
+	agg := events.RoomAggregate(room.Id)
+	bodyEvents, _, err := core.EventPublisher.SubjectEvents(ctx, agg.Subject(events.EventMessageBody))
+	if err != nil {
+		t.Fatalf("SubjectEvents(message_body): %v", err)
+	}
+	if len(bodyEvents) != 1 {
+		t.Fatalf("message_body events = %d, want 1", len(bodyEvents))
+	}
+	bodyEvent := bodyEvents[0].GetMessageBody()
+	if bodyEvent == nil {
+		t.Fatal("expected MessageBodyEvent")
+	}
+	if bodyEvent.GetEventId() != posted.Id {
+		t.Fatalf("MessageBodyEvent.event_id = %q, want %q", bodyEvent.GetEventId(), posted.Id)
+	}
+	if bodyEvent.GetBody().GetBodyEventId() != bodyEvents[0].GetId() {
+		t.Fatalf("body_event_id = %q, want body envelope id %q", bodyEvent.GetBody().GetBodyEventId(), bodyEvents[0].GetId())
+	}
+
+	postEvents, _, err := core.EventPublisher.SubjectEvents(ctx, agg.Subject(events.EventMessagePosted))
+	if err != nil {
+		t.Fatalf("SubjectEvents(message_posted): %v", err)
+	}
+	if len(postEvents) != 1 || postEvents[0].GetMessagePosted().GetBody() != nil {
+		t.Fatalf("message_posted event should exist and be bodyless: %+v", postEvents)
+	}
+
+	if err := core.EditMessage(ctx, user.Id, KindChannel, room.Id, posted.Id, "edited private body payload"); err != nil {
+		t.Fatalf("EditMessage: %v", err)
+	}
+	editEvents, _, err := core.EventPublisher.SubjectEvents(ctx, agg.Subject(events.EventMessageEdited))
+	if err != nil {
+		t.Fatalf("SubjectEvents(message_edited): %v", err)
+	}
+	if len(editEvents) != 1 {
+		t.Fatalf("message_edited events = %d, want 1", len(editEvents))
+	}
+	if editEvents[0].GetMessageEdited().GetBody() != nil {
+		t.Fatal("new MessageEditedEvent should be bodyless")
+	}
+	body, err := core.GetMessageBody(ctx, KindChannel, posted.Id)
+	if err != nil {
+		t.Fatalf("GetMessageBody: %v", err)
+	}
+	if body != "edited private body payload" {
+		t.Fatalf("body = %q, want edited content", body)
+	}
+}
+
+func TestChattoCore_MessageBodyEventsAreSecureDeletedAfterEditAndDelete(t *testing.T) {
+	core, _ := setupTestCore(t)
+	ctx := testContext(t)
+
+	room, _ := core.CreateRoom(ctx, "test-user", KindChannel, "", "General", "General discussion")
+	user, _ := core.CreateUser(ctx, "system", "secure-delete-user", "Secure Delete User", "password123")
+	core.JoinRoom(ctx, user.Id, KindChannel, user.Id, room.Id)
+
+	posted, err := core.PostMessage(ctx, KindChannel, room.Id, user.Id, "original", nil, "", "", nil, false)
+	if err != nil {
+		t.Fatalf("PostMessage: %v", err)
+	}
+	seqs, current, ok := core.RoomTimeline.BodyEventSeqs(posted.Id)
+	if !ok || len(seqs) != 1 || current == 0 {
+		t.Fatalf("BodyEventSeqs after post = (%v, %d, %v), want one current body event", seqs, current, ok)
+	}
+	originalSeq := current
+	if _, err := core.storage.serverEvtStream.GetMsg(ctx, originalSeq); err != nil {
+		t.Fatalf("original body event should exist before edit: %v", err)
+	}
+
+	if err := core.EditMessage(ctx, user.Id, KindChannel, room.Id, posted.Id, "edited"); err != nil {
+		t.Fatalf("EditMessage: %v", err)
+	}
+	if _, err := core.storage.serverEvtStream.GetMsg(ctx, originalSeq); !errors.Is(err, jetstream.ErrMsgNotFound) {
+		t.Fatalf("original body event after edit error = %v, want ErrMsgNotFound", err)
+	}
+	_, editedSeq, ok := core.RoomTimeline.BodyEventSeqs(posted.Id)
+	if !ok || editedSeq == 0 || editedSeq == originalSeq {
+		t.Fatalf("current body seq after edit = %d (ok=%v), want new seq", editedSeq, ok)
+	}
+	if _, err := core.storage.serverEvtStream.GetMsg(ctx, editedSeq); err != nil {
+		t.Fatalf("edited body event should exist before delete: %v", err)
+	}
+
+	if err := core.DeleteMessage(ctx, user.Id, KindChannel, room.Id, posted.Id); err != nil {
+		t.Fatalf("DeleteMessage: %v", err)
+	}
+	if _, err := core.storage.serverEvtStream.GetMsg(ctx, editedSeq); !errors.Is(err, jetstream.ErrMsgNotFound) {
+		t.Fatalf("edited body event after delete error = %v, want ErrMsgNotFound", err)
 	}
 }
 

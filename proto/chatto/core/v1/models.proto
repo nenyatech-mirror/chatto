@@ -219,13 +219,12 @@ message Attachment {
   string message_body_id = 10;
 }
 
-// MessageBody stores the actual content of a message.
-// Stored separately from events in KV buckets for GDPR compliance.
-// This allows individual message bodies to be deleted while preserving
-// the audit trail in the event stream.
-// Message bodies are always encrypted. Legacy bodies use the author's
-// per-user ChaCha20-Poly1305 key directly. New bodies use a versioned
-// envelope with a per-user message-body DEK epoch.
+// MessageBody stores the encrypted content and body-owned metadata of a
+// message. New bodies are carried by MessageBodyEvent so the encrypted
+// payload can be securely deleted while preserving public timeline facts.
+// Message bodies are always encrypted. Legacy bodies use the author's per-user
+// ChaCha20-Poly1305 key directly. V2 bodies use a per-user message-body DEK
+// epoch directly.
 message MessageBody {
   string author_id = 1;
   google.protobuf.Timestamp created_at = 2;
@@ -236,12 +235,16 @@ message MessageBody {
   // means XChaCha20-Poly1305 body encryption with the author's referenced
   // message-body DEK epoch.
   int32 encryption_version = 4;
-  // V2 only: per-user message-body DEK epoch that encrypted this body.
+  // V2: per-user message-body DEK epoch that encrypted this body.
   int32 content_key_epoch = 5;
+  // Event envelope ID of the MessageBodyEvent carrying this body. Included in
+  // AAD for new body-event-carried bodies to prevent replaying old encrypted
+  // body payloads under new body events.
+  string body_event_id = 6;
 
   // Encrypted message body ciphertext with auth tag. For legacy bodies this
-  // is ChaCha20-Poly1305. For v2 envelope bodies this is XChaCha20-Poly1305
-  // using the referenced message-body DEK.
+  // is ChaCha20-Poly1305. For v2 envelope bodies this uses the referenced
+  // message-body DEK.
   bytes encrypted_body = 20;
   // Nonce for encrypted_body: 12 bytes for legacy ChaCha20-Poly1305, 24 bytes
   // for v2 XChaCha20-Poly1305.
