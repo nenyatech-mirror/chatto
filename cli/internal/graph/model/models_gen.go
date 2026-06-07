@@ -920,8 +920,8 @@ type Server struct {
 	Version string `json:"version"`
 	// List of enabled SSO provider names (e.g., 'google', 'github').
 	EnabledAuthProviders []string `json:"enabledAuthProviders"`
-	// Runtime-editable configuration settings.
-	Config *ServerConfig `json:"config"`
+	// Public-facing identity and branding for this server.
+	Profile *ServerProfile `json:"profile"`
 	// True if Web Push notifications are enabled on this server.
 	PushNotificationsEnabled bool `json:"pushNotificationsEnabled"`
 	// VAPID public key for Web Push subscriptions. Null if push is disabled.
@@ -966,7 +966,7 @@ type Server struct {
 	ViewerCanManageRooms bool `json:"viewerCanManageRooms"`
 	// Whether the current user has any unread messages in rooms they've joined.
 	ViewerHasUnreadRooms bool `json:"viewerHasUnreadRooms"`
-	// The current user's server-level notification preference. Null if not authenticated.
+	// The current user's server-level notification preference.
 	ViewerNotificationPreference *ViewerNotificationPreference `json:"viewerNotificationPreference,omitempty"`
 	// Get a single member of this server by user ID.
 	// Returns null if the user is not a member.
@@ -1006,23 +1006,6 @@ type Server struct {
 	UserEffectiveDenials []string `json:"userEffectiveDenials"`
 }
 
-// Runtime-editable server configuration.
-// These are settings that can be changed by admins at runtime.
-type ServerConfig struct {
-	// Server name, displayed in page titles. Defaults to 'Chatto'.
-	ServerName string `json:"serverName"`
-	// URL to the server logo, if set. Pass width, height, and fit for a resized thumbnail.
-	LogoURL *string `json:"logoUrl,omitempty"`
-	// URL to the server banner image, if set. Pass width, height, and fit for a resized thumbnail.
-	BannerURL *string `json:"bannerUrl,omitempty"`
-	// Welcome message to display on the login screen (Markdown). Null if not configured.
-	WelcomeMessage *string `json:"welcomeMessage,omitempty"`
-	// Message of the Day, displayed in the header bar. Null if not configured.
-	Motd *string `json:"motd,omitempty"`
-	// Short description of this server, used for OG link-preview metadata and the welcome card. Null if not configured.
-	Description *string `json:"description,omitempty"`
-}
-
 // Paginated list of server members with metadata.
 type ServerMembersConnection struct {
 	// The users who are members of this server.
@@ -1031,6 +1014,22 @@ type ServerMembersConnection struct {
 	TotalCount int32 `json:"totalCount"`
 	// Whether there are more members beyond this page.
 	HasMore bool `json:"hasMore"`
+}
+
+// How this server presents itself in logged-out and multi-server UI.
+type ServerProfile struct {
+	// Display name for this server. Defaults to 'Chatto'.
+	Name string `json:"name"`
+	// URL to the server logo, if set.
+	LogoURL *string `json:"logoUrl,omitempty"`
+	// URL to the server banner image, if set.
+	BannerURL *string `json:"bannerUrl,omitempty"`
+	// Welcome message to display on the login screen (Markdown). Null if not configured.
+	WelcomeMessage *string `json:"welcomeMessage,omitempty"`
+	// Message of the Day, displayed in the header bar. Null if not configured.
+	Motd *string `json:"motd,omitempty"`
+	// Short description of this server, used for OG link-preview metadata and the welcome card. Null if not configured.
+	Description *string `json:"description,omitempty"`
 }
 
 // Aggregate counts for the deployment. Operator-facing only.

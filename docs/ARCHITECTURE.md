@@ -73,7 +73,7 @@ Key files: [`cli/internal/core/core.go`](cli/internal/core/core.go)
 
 - **NATS**: At the core, Chatto uses a series of NATS JetStream streams, KV buckets and object storage. Data stored in these is defined as Protocol Buffers (see `proto/`).
 - **Core**: The `core` package defines Chatto's domain logic and directly talks to NATS to interact with KV buckets and streams. It provides a ChattoCore struct with methods for all operations (spaces, users, rooms, messages, memberships).
-- **GraphQL**: Client-facing API for all operations (auth, management, messaging). Subscriptions over WebSocket for real-time updates. GraphQL resolvers call Core methods directly, performing authentication and authorization before each call.
+- **GraphQL**: Client-facing API for all operations (auth, management, messaging). Subscriptions over WebSocket for real-time updates. Fields require authentication by default unless marked public in the schema; resolvers call Core methods directly and enforce operation-specific authorization before each call.
 - **Web Client**: SvelteKit-based SPA that gets compiled and embedded into the Go binary. Talks to GraphQL API over HTTP/WebSocket.
 - **Email**: Optional SMTP integration for transactional emails (verification, password reset). Configured via `[smtp]` in config. The `internal/email` package provides a `Mailer` that returns `ErrSMTPDisabled` when SMTP is not configured, allowing callers to handle gracefully.
 
@@ -81,7 +81,7 @@ Key files: [`cli/internal/core/core.go`](cli/internal/core/core.go)
 
 Key files: [`cli/internal/graph/`](cli/internal/graph/) (schemas in `*.graphqls` files, resolvers in `*.resolvers.go`)
 
-The GraphQL API is the primary client-facing interface for Chatto. It provides queries, mutations, and a single unified subscription over HTTP and WebSocket connections. Authentication is cookie-session-based; user registration, login, password reset, email verification, and OAuth flows are REST endpoints (under `/auth/...`) rather than GraphQL mutations.
+The GraphQL API is the primary client-facing interface for Chatto. It provides queries, mutations, and a single unified subscription over HTTP and WebSocket connections. Fields require authentication by default unless explicitly marked public in the schema. Authentication is cookie-session-based; user registration, login, password reset, email verification, and OAuth flows are REST endpoints (under `/auth/...`) rather than GraphQL mutations.
 
 The schema is modular: each feature area lives in its own `.graphqls` file and extends the root `Query` / `Mutation` / `Subscription` types. The operations below group by user-facing area, not by source file.
 
@@ -668,7 +668,7 @@ Notes: Asset IDs are globally unique (NanoID), so no kind segment is needed. Cha
 
 ### Dynamic Image Transformation
 
-Chatto supports on-the-fly image transformation for attachments, user avatars, and server branding images, allowing clients to request images at specific dimensions without pre-generating all possible sizes.
+Chatto supports on-the-fly image transformation for attachments and user avatars, allowing clients to request images at specific dimensions without pre-generating all possible sizes. Public server branding images expose canonical asset URLs instead of accepting arbitrary transform dimensions.
 
 **URL Structure:**
 
@@ -714,7 +714,7 @@ URLs are signed with HMAC-SHA256 using a dedicated `signing_secret` (configured 
 
 **GraphQL Integration:**
 
-The `Attachment`, `User`, and `ServerConfig` image fields expose transform parameters as field arguments:
+The `Attachment` and `User` image fields expose transform parameters as field arguments:
 
 ```graphql
 type Attachment {
@@ -726,9 +726,9 @@ type User {
   avatarUrl(width: Int, height: Int, fit: FitMode): String
 }
 
-type ServerConfig {
-  logoUrl(width: Int, height: Int, fit: FitMode): String
-  bannerUrl(width: Int, height: Int, fit: FitMode): String
+type ServerProfile {
+  logoUrl: String
+  bannerUrl: String
 }
 
 enum FitMode {
@@ -738,7 +738,7 @@ enum FitMode {
 }
 ```
 
-When arguments are provided, the resolver returns a signed transform URL. Without arguments, the original/default thumbnail URL is returned for backward compatibility.
+For `Attachment` and `User` images, arguments return a signed transform URL. Without arguments, the original/default thumbnail URL is returned for backward compatibility. Public `ServerProfile` image fields intentionally return canonical asset URLs without transform arguments so anonymous server discovery cannot mint unbounded resize variants.
 
 **Caching:**
 
