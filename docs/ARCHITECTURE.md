@@ -137,7 +137,7 @@ Admin queries are nested under a single `admin: AdminQueries` field that returns
 
 | Mutation                | Description                                                |
 | ----------------------- | ---------------------------------------------------------- |
-| `updateServer`          | Update server name / description.                          |
+| `updateServerConfig`    | Update runtime-editable server presentation/configuration fields. |
 | `uploadServerLogo`      | Upload server logo.                                        |
 | `deleteServerLogo`      | Delete server logo.                                        |
 | `uploadServerBanner`    | Upload server banner.                                      |
@@ -249,7 +249,7 @@ Diagnostic fields (`admin.systemInfo`, `admin.eventLog`, `admin.eventLogEntry`, 
 | `admin.eventLog(limit, before)`                  | Query     | Diagnostic event-log browser, newest first (`limit` default 50, max 200).                    |
 | `admin.eventLogEntry(sequence)`                  | Query     | Diagnostic event-log entry lookup by sequence.                                               |
 | `admin.projections`                              | Query     | Projection lag, rough memory estimates, and diagnostic metric buckets.                       |
-| `admin.updateServerConfig(input)`                | Mutation  | Update server configuration.                                                                 |
+| `admin.updateBlockedUsernames(input)`            | Mutation  | Update the newline-separated blocked-username list.                                          |
 | `admin.updateUser(input)`                        | Mutation  | Update a user's login / display name (bypasses the 30-day cooldown).                         |
 | `admin.clearUsernameCooldown(userId)`            | Mutation  | Manually clear a user's login change cooldown.                                               |
 

@@ -89,9 +89,9 @@ type ComplexityRoot struct {
 	}
 
 	AdminMutations struct {
-		ClearUsernameCooldown func(childComplexity int, input model.ClearUsernameCooldownInput) int
-		UpdateServerConfig    func(childComplexity int, input model.UpdateServerConfigInput) int
-		UpdateUser            func(childComplexity int, input model.AdminUpdateUserInput) int
+		ClearUsernameCooldown  func(childComplexity int, input model.ClearUsernameCooldownInput) int
+		UpdateBlockedUsernames func(childComplexity int, input model.UpdateBlockedUsernamesInput) int
+		UpdateUser             func(childComplexity int, input model.AdminUpdateUserInput) int
 	}
 
 	AdminQueries struct {
@@ -371,7 +371,7 @@ type ComplexityRoot struct {
 		UpdateRole                 func(childComplexity int, input model.UpdateRoleInput) int
 		UpdateRoom                 func(childComplexity int, input model.UpdateRoomInput) int
 		UpdateRoomGroup            func(childComplexity int, input model.UpdateRoomGroupInput) int
-		UpdateServer               func(childComplexity int, input model.UpdateServerInput) int
+		UpdateServerConfig         func(childComplexity int, input model.UpdateServerConfigInput) int
 		UpdateSettings             func(childComplexity int, input model.UpdateSettingsInput) int
 		UploadAvatar               func(childComplexity int, input model.UploadAvatarInput) int
 		UploadServerBanner         func(childComplexity int, input model.UploadServerBannerInput) int
@@ -944,7 +944,7 @@ type ComplexityRoot struct {
 }
 
 type AdminMutationsResolver interface {
-	UpdateServerConfig(ctx context.Context, obj *model.AdminMutations, input model.UpdateServerConfigInput) (*model.AdminServerConfig, error)
+	UpdateBlockedUsernames(ctx context.Context, obj *model.AdminMutations, input model.UpdateBlockedUsernamesInput) (string, error)
 	UpdateUser(ctx context.Context, obj *model.AdminMutations, input model.AdminUpdateUserInput) (*corev1.User, error)
 	ClearUsernameCooldown(ctx context.Context, obj *model.AdminMutations, input model.ClearUsernameCooldownInput) (bool, error)
 }
@@ -1051,7 +1051,6 @@ type MutationResolver interface {
 	UnarchiveRoom(ctx context.Context, input model.UnarchiveRoomInput) (*corev1.Room, error)
 	JoinGroup(ctx context.Context, input model.JoinGroupInput) ([]string, error)
 	PostMessage(ctx context.Context, input model.PostMessageInput) (core.EventEnvelope, error)
-	UpdateServer(ctx context.Context, input model.UpdateServerInput) (*model.Server, error)
 	UploadServerLogo(ctx context.Context, input model.UploadServerLogoInput) (*model.Server, error)
 	DeleteServerLogo(ctx context.Context) (*model.Server, error)
 	UploadServerBanner(ctx context.Context, input model.UploadServerBannerInput) (*model.Server, error)
@@ -1074,6 +1073,7 @@ type MutationResolver interface {
 	DeleteAvatar(ctx context.Context, input model.DeleteAvatarInput) (*corev1.User, error)
 	RequestAccountDeletion(ctx context.Context) (string, error)
 	DeleteMyAccount(ctx context.Context, input model.DeleteMyAccountInput) (bool, error)
+	UpdateServerConfig(ctx context.Context, input model.UpdateServerConfigInput) (*model.ServerProfile, error)
 	Admin(ctx context.Context) (*model.AdminMutations, error)
 	StartDm(ctx context.Context, input model.StartDMInput) (*corev1.Room, error)
 	SetServerNotificationLevel(ctx context.Context, input model.SetServerNotificationLevelInput) (*model.ViewerNotificationPreference, error)
@@ -1341,17 +1341,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.AdminMutations.ClearUsernameCooldown(childComplexity, args["input"].(model.ClearUsernameCooldownInput)), true
-	case "AdminMutations.updateServerConfig":
-		if e.ComplexityRoot.AdminMutations.UpdateServerConfig == nil {
+	case "AdminMutations.updateBlockedUsernames":
+		if e.ComplexityRoot.AdminMutations.UpdateBlockedUsernames == nil {
 			break
 		}
 
-		args, err := ec.field_AdminMutations_updateServerConfig_args(ctx, rawArgs)
+		args, err := ec.field_AdminMutations_updateBlockedUsernames_args(ctx, rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.ComplexityRoot.AdminMutations.UpdateServerConfig(childComplexity, args["input"].(model.UpdateServerConfigInput)), true
+		return e.ComplexityRoot.AdminMutations.UpdateBlockedUsernames(childComplexity, args["input"].(model.UpdateBlockedUsernamesInput)), true
 	case "AdminMutations.updateUser":
 		if e.ComplexityRoot.AdminMutations.UpdateUser == nil {
 			break
@@ -2869,17 +2869,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.UpdateRoomGroup(childComplexity, args["input"].(model.UpdateRoomGroupInput)), true
-	case "Mutation.updateServer":
-		if e.ComplexityRoot.Mutation.UpdateServer == nil {
+	case "Mutation.updateServerConfig":
+		if e.ComplexityRoot.Mutation.UpdateServerConfig == nil {
 			break
 		}
 
-		args, err := ec.field_Mutation_updateServer_args(ctx, rawArgs)
+		args, err := ec.field_Mutation_updateServerConfig_args(ctx, rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Mutation.UpdateServer(childComplexity, args["input"].(model.UpdateServerInput)), true
+		return e.ComplexityRoot.Mutation.UpdateServerConfig(childComplexity, args["input"].(model.UpdateServerConfigInput)), true
 	case "Mutation.updateSettings":
 		if e.ComplexityRoot.Mutation.UpdateSettings == nil {
 			break
@@ -5285,6 +5285,7 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputUnarchiveRoomInput,
 		ec.unmarshalInputUnfollowThreadInput,
 		ec.unmarshalInputUnsubscribeFromPushInput,
+		ec.unmarshalInputUpdateBlockedUsernamesInput,
 		ec.unmarshalInputUpdateMessageInput,
 		ec.unmarshalInputUpdateMyPresenceInput,
 		ec.unmarshalInputUpdateProfileInput,
@@ -5292,7 +5293,6 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 		ec.unmarshalInputUpdateRoomGroupInput,
 		ec.unmarshalInputUpdateRoomInput,
 		ec.unmarshalInputUpdateServerConfigInput,
-		ec.unmarshalInputUpdateServerInput,
 		ec.unmarshalInputUpdateSettingsInput,
 		ec.unmarshalInputUploadAvatarInput,
 		ec.unmarshalInputUploadServerBannerInput,
@@ -5458,8 +5458,8 @@ func (ec *executionContext) childFields_AccountInfo(ctx context.Context, field g
 
 func (ec *executionContext) childFields_AdminMutations(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
-	case "updateServerConfig":
-		return ec.fieldContext_AdminMutations_updateServerConfig(ctx, field)
+	case "updateBlockedUsernames":
+		return ec.fieldContext_AdminMutations_updateBlockedUsernames(ctx, field)
 	case "updateUser":
 		return ec.fieldContext_AdminMutations_updateUser(ctx, field)
 	case "clearUsernameCooldown":
@@ -6626,12 +6626,12 @@ func (ec *executionContext) field_AdminMutations_clearUsernameCooldown_args(ctx 
 	return args, nil
 }
 
-func (ec *executionContext) field_AdminMutations_updateServerConfig_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_AdminMutations_updateBlockedUsernames_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
-		func(ctx context.Context, v any) (model.UpdateServerConfigInput, error) {
-			return ec.unmarshalNUpdateServerConfigInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐUpdateServerConfigInput(ctx, v)
+		func(ctx context.Context, v any) (model.UpdateBlockedUsernamesInput, error) {
+			return ec.unmarshalNUpdateBlockedUsernamesInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐUpdateBlockedUsernamesInput(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -7668,12 +7668,12 @@ func (ec *executionContext) field_Mutation_updateRoom_args(ctx context.Context, 
 	return args, nil
 }
 
-func (ec *executionContext) field_Mutation_updateServer_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_Mutation_updateServerConfig_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
-		func(ctx context.Context, v any) (model.UpdateServerInput, error) {
-			return ec.unmarshalNUpdateServerInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐUpdateServerInput(ctx, v)
+		func(ctx context.Context, v any) (model.UpdateServerConfigInput, error) {
+			return ec.unmarshalNUpdateServerConfigInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐUpdateServerConfigInput(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -8492,34 +8492,34 @@ func (ec *executionContext) fieldContext_AccountInfo_consumersUsed(_ context.Con
 	return graphql.NewScalarFieldContext("AccountInfo", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
-func (ec *executionContext) _AdminMutations_updateServerConfig(ctx context.Context, field graphql.CollectedField, obj *model.AdminMutations) (ret graphql.Marshaler) {
+func (ec *executionContext) _AdminMutations_updateBlockedUsernames(ctx context.Context, field graphql.CollectedField, obj *model.AdminMutations) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
 		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_AdminMutations_updateServerConfig(ctx, field)
+			return ec.fieldContext_AdminMutations_updateBlockedUsernames(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.AdminMutations().UpdateServerConfig(ctx, obj, fc.Args["input"].(model.UpdateServerConfigInput))
+			return ec.Resolvers.AdminMutations().UpdateBlockedUsernames(ctx, obj, fc.Args["input"].(model.UpdateBlockedUsernamesInput))
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *model.AdminServerConfig) graphql.Marshaler {
-			return ec.marshalNAdminServerConfig2ᚖhmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐAdminServerConfig(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
-func (ec *executionContext) fieldContext_AdminMutations_updateServerConfig(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_AdminMutations_updateBlockedUsernames(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AdminMutations",
 		Field:      field,
 		IsMethod:   true,
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.childFields_AdminServerConfig(ctx, field)
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	defer func() {
@@ -8529,7 +8529,7 @@ func (ec *executionContext) fieldContext_AdminMutations_updateServerConfig(ctx c
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_AdminMutations_updateServerConfig_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_AdminMutations_updateBlockedUsernames_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -12367,50 +12367,6 @@ func (ec *executionContext) fieldContext_Mutation_postMessage(ctx context.Contex
 	return fc, nil
 }
 
-func (ec *executionContext) _Mutation_updateServer(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_Mutation_updateServer(ctx, field)
-		},
-		func(ctx context.Context) (any, error) {
-			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().UpdateServer(ctx, fc.Args["input"].(model.UpdateServerInput))
-		},
-		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *model.Server) graphql.Marshaler {
-			return ec.marshalNServer2ᚖhmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐServer(ctx, selections, v)
-		},
-		true,
-		true,
-	)
-}
-func (ec *executionContext) fieldContext_Mutation_updateServer(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "Mutation",
-		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.childFields_Server(ctx, field)
-		},
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			err = ec.Recover(ctx, r)
-			ec.Error(ctx, err)
-		}
-	}()
-	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Mutation_updateServer_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
-		ec.Error(ctx, err)
-		return fc, err
-	}
-	return fc, nil
-}
-
 func (ec *executionContext) _Mutation_uploadServerLogo(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -13328,6 +13284,50 @@ func (ec *executionContext) fieldContext_Mutation_deleteMyAccount(ctx context.Co
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_deleteMyAccount_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_updateServerConfig(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_updateServerConfig(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().UpdateServerConfig(ctx, fc.Args["input"].(model.UpdateServerConfigInput))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.ServerProfile) graphql.Marshaler {
+			return ec.marshalNServerProfile2ᚖhmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐServerProfile(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_updateServerConfig(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ServerProfile(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_updateServerConfig_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -27358,6 +27358,56 @@ func (ec *executionContext) unmarshalInputUnsubscribeFromPushInput(ctx context.C
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputUpdateBlockedUsernamesInput(ctx context.Context, obj any) (model.UpdateBlockedUsernamesInput, error) {
+	var it model.UpdateBlockedUsernamesInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"blockedUsernames"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "blockedUsernames":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("blockedUsernames"))
+			directive0 := func(ctx context.Context) (any, error) { return ec.unmarshalNString2string(ctx, v) }
+
+			directive1 := func(ctx context.Context) (any, error) {
+				max, err := ec.unmarshalNInt2int32(ctx, 10000)
+				if err != nil {
+					var zeroVal string
+					return zeroVal, err
+				}
+				if ec.Directives.Length == nil {
+					var zeroVal string
+					return zeroVal, errors.New("directive length is not implemented")
+				}
+				return ec.Directives.Length(ctx, obj, directive0, nil, max, nil)
+			}
+
+			tmp, err := directive1(ctx)
+			if err != nil {
+				return it, graphql.ErrorOnPath(ctx, err)
+			}
+			if data, ok := tmp.(string); ok {
+				it.BlockedUsernames = data
+			} else {
+				err := fmt.Errorf(`unexpected type %T from directive, should be string`, tmp)
+				return it, graphql.ErrorOnPath(ctx, err)
+			}
+		}
+	}
+	return it, nil
+}
+
 func (ec *executionContext) unmarshalInputUpdateMessageInput(ctx context.Context, obj any) (model.UpdateMessageInput, error) {
 	var it model.UpdateMessageInput
 	if obj == nil {
@@ -27721,7 +27771,7 @@ func (ec *executionContext) unmarshalInputUpdateServerConfigInput(ctx context.Co
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"welcomeMessage", "serverName", "motd", "blockedUsernames", "description"}
+	fieldsInOrder := [...]string{"welcomeMessage", "serverName", "motd", "description"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -27815,35 +27865,6 @@ func (ec *executionContext) unmarshalInputUpdateServerConfigInput(ctx context.Co
 				err := fmt.Errorf(`unexpected type %T from directive, should be *string`, tmp)
 				return it, graphql.ErrorOnPath(ctx, err)
 			}
-		case "blockedUsernames":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("blockedUsernames"))
-			directive0 := func(ctx context.Context) (any, error) { return ec.unmarshalOString2ᚖstring(ctx, v) }
-
-			directive1 := func(ctx context.Context) (any, error) {
-				max, err := ec.unmarshalNInt2int32(ctx, 10000)
-				if err != nil {
-					var zeroVal *string
-					return zeroVal, err
-				}
-				if ec.Directives.Length == nil {
-					var zeroVal *string
-					return zeroVal, errors.New("directive length is not implemented")
-				}
-				return ec.Directives.Length(ctx, obj, directive0, nil, max, nil)
-			}
-
-			tmp, err := directive1(ctx)
-			if err != nil {
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
-			if data, ok := tmp.(*string); ok {
-				it.BlockedUsernames = data
-			} else if tmp == nil {
-				it.BlockedUsernames = nil
-			} else {
-				err := fmt.Errorf(`unexpected type %T from directive, should be *string`, tmp)
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
 		case "description":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("description"))
 			directive0 := func(ctx context.Context) (any, error) { return ec.unmarshalOString2ᚖstring(ctx, v) }
@@ -27869,143 +27890,6 @@ func (ec *executionContext) unmarshalInputUpdateServerConfigInput(ctx context.Co
 				it.Description = data
 			} else if tmp == nil {
 				it.Description = nil
-			} else {
-				err := fmt.Errorf(`unexpected type %T from directive, should be *string`, tmp)
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
-		}
-	}
-	return it, nil
-}
-
-func (ec *executionContext) unmarshalInputUpdateServerInput(ctx context.Context, obj any) (model.UpdateServerInput, error) {
-	var it model.UpdateServerInput
-	if obj == nil {
-		return it, nil
-	}
-
-	asMap := map[string]any{}
-	for k, v := range obj.(map[string]any) {
-		asMap[k] = v
-	}
-
-	fieldsInOrder := [...]string{"name", "description", "motd", "welcomeMessage"}
-	for _, k := range fieldsInOrder {
-		v, ok := asMap[k]
-		if !ok {
-			continue
-		}
-		switch k {
-		case "name":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("name"))
-			directive0 := func(ctx context.Context) (any, error) { return ec.unmarshalNString2string(ctx, v) }
-
-			directive1 := func(ctx context.Context) (any, error) {
-				max, err := ec.unmarshalNInt2int32(ctx, 80)
-				if err != nil {
-					var zeroVal string
-					return zeroVal, err
-				}
-				if ec.Directives.Length == nil {
-					var zeroVal string
-					return zeroVal, errors.New("directive length is not implemented")
-				}
-				return ec.Directives.Length(ctx, obj, directive0, nil, max, nil)
-			}
-
-			tmp, err := directive1(ctx)
-			if err != nil {
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
-			if data, ok := tmp.(string); ok {
-				it.Name = data
-			} else {
-				err := fmt.Errorf(`unexpected type %T from directive, should be string`, tmp)
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
-		case "description":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("description"))
-			directive0 := func(ctx context.Context) (any, error) { return ec.unmarshalOString2ᚖstring(ctx, v) }
-
-			directive1 := func(ctx context.Context) (any, error) {
-				max, err := ec.unmarshalNInt2int32(ctx, 500)
-				if err != nil {
-					var zeroVal *string
-					return zeroVal, err
-				}
-				if ec.Directives.Length == nil {
-					var zeroVal *string
-					return zeroVal, errors.New("directive length is not implemented")
-				}
-				return ec.Directives.Length(ctx, obj, directive0, nil, max, nil)
-			}
-
-			tmp, err := directive1(ctx)
-			if err != nil {
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
-			if data, ok := tmp.(*string); ok {
-				it.Description = data
-			} else if tmp == nil {
-				it.Description = nil
-			} else {
-				err := fmt.Errorf(`unexpected type %T from directive, should be *string`, tmp)
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
-		case "motd":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("motd"))
-			directive0 := func(ctx context.Context) (any, error) { return ec.unmarshalOString2ᚖstring(ctx, v) }
-
-			directive1 := func(ctx context.Context) (any, error) {
-				max, err := ec.unmarshalNInt2int32(ctx, 1000)
-				if err != nil {
-					var zeroVal *string
-					return zeroVal, err
-				}
-				if ec.Directives.Length == nil {
-					var zeroVal *string
-					return zeroVal, errors.New("directive length is not implemented")
-				}
-				return ec.Directives.Length(ctx, obj, directive0, nil, max, nil)
-			}
-
-			tmp, err := directive1(ctx)
-			if err != nil {
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
-			if data, ok := tmp.(*string); ok {
-				it.Motd = data
-			} else if tmp == nil {
-				it.Motd = nil
-			} else {
-				err := fmt.Errorf(`unexpected type %T from directive, should be *string`, tmp)
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
-		case "welcomeMessage":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("welcomeMessage"))
-			directive0 := func(ctx context.Context) (any, error) { return ec.unmarshalOString2ᚖstring(ctx, v) }
-
-			directive1 := func(ctx context.Context) (any, error) {
-				max, err := ec.unmarshalNInt2int32(ctx, 10000)
-				if err != nil {
-					var zeroVal *string
-					return zeroVal, err
-				}
-				if ec.Directives.Length == nil {
-					var zeroVal *string
-					return zeroVal, errors.New("directive length is not implemented")
-				}
-				return ec.Directives.Length(ctx, obj, directive0, nil, max, nil)
-			}
-
-			tmp, err := directive1(ctx)
-			if err != nil {
-				return it, graphql.ErrorOnPath(ctx, err)
-			}
-			if data, ok := tmp.(*string); ok {
-				it.WelcomeMessage = data
-			} else if tmp == nil {
-				it.WelcomeMessage = nil
 			} else {
 				err := fmt.Errorf(`unexpected type %T from directive, should be *string`, tmp)
 				return it, graphql.ErrorOnPath(ctx, err)
@@ -28503,7 +28387,7 @@ func (ec *executionContext) _AdminMutations(ctx context.Context, sel ast.Selecti
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("AdminMutations")
-		case "updateServerConfig":
+		case "updateBlockedUsernames":
 			field := field
 
 			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
@@ -28512,7 +28396,7 @@ func (ec *executionContext) _AdminMutations(ctx context.Context, sel ast.Selecti
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._AdminMutations_updateServerConfig(ctx, field, obj)
+				res = ec._AdminMutations_updateBlockedUsernames(ctx, field, obj)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -31987,13 +31871,6 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
-		case "updateServer":
-			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
-				return ec._Mutation_updateServer(ctx, field)
-			})
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
 		case "uploadServerLogo":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_uploadServerLogo(ctx, field)
@@ -32144,6 +32021,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "deleteMyAccount":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_deleteMyAccount(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "updateServerConfig":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_updateServerConfig(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -41412,6 +41296,11 @@ func (ec *executionContext) unmarshalNUnsubscribeFromPushInput2hmansᚗdeᚋchat
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) unmarshalNUpdateBlockedUsernamesInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐUpdateBlockedUsernamesInput(ctx context.Context, v any) (model.UpdateBlockedUsernamesInput, error) {
+	res, err := ec.unmarshalInputUpdateBlockedUsernamesInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) unmarshalNUpdateMessageInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐUpdateMessageInput(ctx context.Context, v any) (model.UpdateMessageInput, error) {
 	res, err := ec.unmarshalInputUpdateMessageInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -41444,11 +41333,6 @@ func (ec *executionContext) unmarshalNUpdateRoomInput2hmansᚗdeᚋchattoᚋinte
 
 func (ec *executionContext) unmarshalNUpdateServerConfigInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐUpdateServerConfigInput(ctx context.Context, v any) (model.UpdateServerConfigInput, error) {
 	res, err := ec.unmarshalInputUpdateServerConfigInput(ctx, v)
-	return res, graphql.ErrorOnPath(ctx, err)
-}
-
-func (ec *executionContext) unmarshalNUpdateServerInput2hmansᚗdeᚋchattoᚋinternalᚋgraphᚋmodelᚐUpdateServerInput(ctx context.Context, v any) (model.UpdateServerInput, error) {
-	res, err := ec.unmarshalInputUpdateServerInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
