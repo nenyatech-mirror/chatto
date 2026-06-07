@@ -326,15 +326,72 @@ func TestAssetProcessingSucceededEventResolver_MessageEventID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MessageEventID returned error: %v", err)
 	}
-	if got != "M1" {
-		t.Fatalf("MessageEventID = %q, want M1 (read off the event)", got)
+	if got == nil || *got != "M1" {
+		t.Fatalf("MessageEventID = %v, want M1 (read off the event)", got)
 	}
 
-	// One-shot migration events don't carry it; the resolver yields empty.
+	// One-shot migration events don't carry it; the resolver yields null.
 	if got, err := resolver.MessageEventID(env.authContext(), &corev1.AssetProcessingSucceededEvent{AssetId: "A-video"}); err != nil {
 		t.Fatalf("MessageEventID returned error: %v", err)
-	} else if got != "" {
-		t.Fatalf("MessageEventID without stamp = %q, want empty", got)
+	} else if got != nil {
+		t.Fatalf("MessageEventID without stamp = %v, want nil", got)
+	}
+}
+
+func TestEventResolver_ActorIDNullForSystemEvents(t *testing.T) {
+	env := setupTestResolver(t)
+	resolver := env.resolver.Event()
+
+	got, err := resolver.ActorID(env.authContext(), core.NewEVTEventEnvelope(&corev1.Event{}))
+	if err != nil {
+		t.Fatalf("ActorID returned error: %v", err)
+	}
+	if got != nil {
+		t.Fatalf("ActorID for empty actor = %v, want nil", got)
+	}
+
+	got, err = resolver.ActorID(env.authContext(), core.NewEVTEventEnvelope(&corev1.Event{ActorId: "U123"}))
+	if err != nil {
+		t.Fatalf("ActorID returned error: %v", err)
+	}
+	if got == nil || *got != "U123" {
+		t.Fatalf("ActorID = %v, want U123", got)
+	}
+}
+
+func TestNullableEventResolvers_EmptyStringsBecomeNull(t *testing.T) {
+	env := setupTestResolver(t)
+
+	roomID, err := env.resolver.AssetProcessingStartedEvent().RoomID(env.authContext(), &corev1.AssetProcessingStartedEvent{AssetId: "A-missing"})
+	if err != nil {
+		t.Fatalf("AssetProcessingStartedEvent.RoomID returned error: %v", err)
+	}
+	if roomID != nil {
+		t.Fatalf("AssetProcessingStartedEvent.RoomID = %v, want nil", roomID)
+	}
+
+	messageEventID, err := env.resolver.AssetProcessingStartedEvent().MessageEventID(env.authContext(), &corev1.AssetProcessingStartedEvent{})
+	if err != nil {
+		t.Fatalf("AssetProcessingStartedEvent.MessageEventID returned error: %v", err)
+	}
+	if messageEventID != nil {
+		t.Fatalf("AssetProcessingStartedEvent.MessageEventID = %v, want nil", messageEventID)
+	}
+
+	timezone, err := env.resolver.ServerUserPreferencesUpdatedEvent().Timezone(env.authContext(), &corev1.ServerUserPreferencesUpdatedEvent{})
+	if err != nil {
+		t.Fatalf("ServerUserPreferencesUpdatedEvent.Timezone returned error: %v", err)
+	}
+	if timezone != nil {
+		t.Fatalf("ServerUserPreferencesUpdatedEvent.Timezone = %v, want nil", timezone)
+	}
+
+	avatarURL, err := env.resolver.UserProfileUpdatedEvent().AvatarURL(env.authContext(), &corev1.UserProfileUpdatedEvent{})
+	if err != nil {
+		t.Fatalf("UserProfileUpdatedEvent.AvatarURL returned error: %v", err)
+	}
+	if avatarURL != nil {
+		t.Fatalf("UserProfileUpdatedEvent.AvatarURL = %v, want nil", avatarURL)
 	}
 }
 
