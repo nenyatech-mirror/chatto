@@ -129,6 +129,31 @@ func TestMigrateRoomAggregateToES_AcceptsOldMembershipKeyShape(t *testing.T) {
 	require.Equal(t, "R1", ev.GetUserJoinedRoom().GetRoomId())
 }
 
+func TestMigrateRoomAggregateToES_DedupesOldAndKindedMembershipKeys(t *testing.T) {
+	ctx, kv, stream, publisher := setupTestES(t)
+
+	seedRoom(t, kv, "channel", &corev1.Room{
+		Id:   "R1",
+		Name: "general",
+		Kind: corev1.RoomKind_ROOM_KIND_CHANNEL,
+	})
+	seedMembership(t, kv, "channel", "R1", "U1")
+	seedOldMembership(t, kv, "R1", "U1")
+
+	require.NoError(t, MigrateRoomAggregateToES(ctx, kv, publisher, testLogger()))
+
+	info, err := stream.Info(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, info.State.Msgs)
+
+	msg, err := stream.GetMsg(ctx, 2)
+	require.NoError(t, err)
+	var ev corev1.Event
+	require.NoError(t, proto.Unmarshal(msg.Data, &ev))
+	require.Equal(t, "U1", ev.GetActorId())
+	require.Equal(t, "R1", ev.GetUserJoinedRoom().GetRoomId())
+}
+
 func TestMigrateRoomAggregateToES_BackfillsMissingMemberships(t *testing.T) {
 	ctx, kv, stream, publisher := setupTestES(t)
 

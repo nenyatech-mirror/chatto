@@ -169,9 +169,16 @@ func (c *ChattoCore) collectLegacyESCounts(ctx context.Context) (esLegacyCounts,
 	if err != nil {
 		return counts, warnings, fmt.Errorf("count legacy rooms: %w", err)
 	}
-	counts.memberships, err = countKVKeys(ctx, c.storage.serverConfigKV, "room_membership.>")
+	var rawMemberships, malformedMemberships int
+	counts.memberships, rawMemberships, malformedMemberships, err = countLegacyRoomMembershipPairs(ctx, c.storage.serverConfigKV)
 	if err != nil {
 		return counts, warnings, fmt.Errorf("count legacy memberships: %w", err)
+	}
+	if rawMemberships > counts.memberships {
+		warnings = append(warnings, fmt.Sprintf("legacy room_membership keys contain %d duplicate key-shape record(s)", rawMemberships-counts.memberships))
+	}
+	if malformedMemberships > 0 {
+		warnings = append(warnings, fmt.Sprintf("legacy room_membership keys contain %d malformed record(s)", malformedMemberships))
 	}
 	counts.roomGroups, err = countKVKeys(ctx, c.storage.serverConfigKV, "room_group.*")
 	if err != nil {
@@ -185,13 +192,26 @@ func (c *ChattoCore) collectLegacyESCounts(ctx context.Context) (esLegacyCounts,
 	if err != nil {
 		return counts, warnings, fmt.Errorf("check legacy server config: %w", err)
 	}
-	counts.messages, err = countStreamMessages(ctx, c.storage.serverEventsStream, []string{"server.room.*.*.msg.>"})
+	var nonMessagePosts, legacyMessageDecodeErrors int
+	counts.messages, nonMessagePosts, legacyMessageDecodeErrors, err = countLegacyMessagePostedEvents(ctx, c.storage.serverEventsStream, []string{"server.room.*.*.msg.>"})
 	if err != nil {
 		return counts, warnings, fmt.Errorf("count legacy messages: %w", err)
 	}
-	counts.threadReplies, err = countStreamMessages(ctx, c.storage.serverEventsStream, []string{"server.room.*.*.msg.*.replies.>"})
+	if nonMessagePosts > 0 {
+		warnings = append(warnings, fmt.Sprintf("legacy message subjects contain %d non-MessagePostedEvent record(s)", nonMessagePosts))
+	}
+	if legacyMessageDecodeErrors > 0 {
+		warnings = append(warnings, fmt.Sprintf("legacy message subjects contain %d decode error(s)", legacyMessageDecodeErrors))
+	}
+	counts.threadReplies, nonMessagePosts, legacyMessageDecodeErrors, err = countLegacyMessagePostedEvents(ctx, c.storage.serverEventsStream, []string{"server.room.*.*.msg.*.replies.>"})
 	if err != nil {
 		return counts, warnings, fmt.Errorf("count legacy thread replies: %w", err)
+	}
+	if nonMessagePosts > 0 {
+		warnings = append(warnings, fmt.Sprintf("legacy thread-reply subjects contain %d non-MessagePostedEvent record(s)", nonMessagePosts))
+	}
+	if legacyMessageDecodeErrors > 0 {
+		warnings = append(warnings, fmt.Sprintf("legacy thread-reply subjects contain %d decode error(s)", legacyMessageDecodeErrors))
 	}
 	counts.reactions, err = countKVKeys(ctx, c.storage.serverReactionsKV)
 	if err != nil {
@@ -388,6 +408,30 @@ func countKVKeys(ctx context.Context, kv jetstream.KeyValue, filters ...string) 
 	return count, nil
 }
 
+func countLegacyRoomMembershipPairs(ctx context.Context, kv jetstream.KeyValue) (unique int, raw int, malformed int, err error) {
+	if kv == nil {
+		return 0, 0, 0, nil
+	}
+	lister, err := kv.ListKeysFiltered(ctx, "room_membership.>")
+	if err != nil {
+		if errors.Is(err, jetstream.ErrNoKeysFound) {
+			return 0, 0, 0, nil
+		}
+		return 0, 0, 0, err
+	}
+	pairs := make(map[string]struct{})
+	for key := range lister.Keys() {
+		raw++
+		roomID, userID, ok := parseLegacyRoomMembershipKey(key)
+		if !ok {
+			malformed++
+			continue
+		}
+		pairs[roomID+"."+userID] = struct{}{}
+	}
+	return len(pairs), raw, malformed, nil
+}
+
 func countLegacyUserRecords(ctx context.Context, kv jetstream.KeyValue) (int, error) {
 	if kv == nil {
 		return 0, nil
@@ -406,6 +450,24 @@ func countLegacyUserRecords(ctx context.Context, kv jetstream.KeyValue) (int, er
 		}
 	}
 	return count, nil
+}
+
+func parseLegacyRoomMembershipKey(key string) (roomID string, userID string, ok bool) {
+	parts := strings.Split(key, ".")
+	switch len(parts) {
+	case 4:
+		if parts[0] != "room_membership" {
+			return "", "", false
+		}
+		return parts[2], parts[3], true
+	case 3:
+		if parts[0] != "room_membership" {
+			return "", "", false
+		}
+		return parts[2], parts[1], true
+	default:
+		return "", "", false
+	}
 }
 
 func kvKeyExists(ctx context.Context, kv jetstream.KeyValue, key string) (bool, error) {
@@ -443,4 +505,60 @@ func countStreamMessages(ctx context.Context, stream jetstream.Stream, filters [
 		return 0, err
 	}
 	return int(info.NumPending), nil
+}
+
+func countLegacyMessagePostedEvents(ctx context.Context, stream jetstream.Stream, filters []string) (messagePosts int, nonMessagePosts int, decodeErrors int, err error) {
+	if stream == nil {
+		return 0, 0, 0, nil
+	}
+	consumer, err := stream.CreateConsumer(ctx, jetstream.ConsumerConfig{
+		FilterSubjects:    filters,
+		DeliverPolicy:     jetstream.DeliverAllPolicy,
+		AckPolicy:         jetstream.AckNonePolicy,
+		MemoryStorage:     true,
+		InactiveThreshold: 30 * time.Second,
+	})
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	defer stream.DeleteConsumer(context.Background(), consumer.CachedInfo().Name)
+
+	info, err := consumer.Info(ctx)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	remaining := int(info.NumPending)
+	for remaining > 0 {
+		batchSize := remaining
+		if batchSize > 500 {
+			batchSize = 500
+		}
+		msgs, err := consumer.Fetch(batchSize, jetstream.FetchMaxWait(10*time.Second))
+		if err != nil {
+			if errors.Is(err, jetstream.ErrNoMessages) {
+				break
+			}
+			return 0, 0, 0, err
+		}
+		fetched := 0
+		for msg := range msgs.Messages() {
+			fetched++
+			var event corev1.Event
+			if err := proto.Unmarshal(msg.Data(), &event); err != nil {
+				decodeErrors++
+				continue
+			}
+			if event.GetMessagePosted() == nil {
+				nonMessagePosts++
+				continue
+			}
+			messagePosts++
+		}
+		if fetched == 0 {
+			break
+		}
+		remaining -= fetched
+	}
+	return messagePosts, nonMessagePosts, decodeErrors, nil
 }

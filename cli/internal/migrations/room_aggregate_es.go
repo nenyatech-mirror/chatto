@@ -241,7 +241,24 @@ func loadMembershipsByRoom(
 			logger.Warn("room_aggregate ES migration: skipping unfetchable membership", "key", key, "error", err)
 			continue
 		}
-		byRoom[roomID] = append(byRoom[roomID], membershipEntry{userID: userID, createdAt: entry.Created()})
+		membership := membershipEntry{userID: userID, createdAt: entry.Created()}
+		members := byRoom[roomID]
+		duplicate := false
+		for i, existing := range members {
+			if existing.userID != userID {
+				continue
+			}
+			duplicate = true
+			if membership.createdAt.Before(existing.createdAt) {
+				members[i] = membership
+			}
+			break
+		}
+		if duplicate {
+			byRoom[roomID] = members
+			continue
+		}
+		byRoom[roomID] = append(members, membership)
 	}
 
 	for roomID, ms := range byRoom {
