@@ -345,7 +345,7 @@ func subjectMatchesFilter(filter, subject string) bool {
 
 // WaitForCurrent blocks until the projection has applied the latest
 // stream message currently matching its subject filters. It is intended
-// for diagnostics and boot verification: call it after the projector is
+// for diagnostics and sequencing: call it after the projector is
 // running to ensure projection reads reflect the stream as of this call.
 func (p *Projector) WaitForCurrent(ctx context.Context) error {
 	target, err := p.currentTarget(ctx)

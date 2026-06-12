@@ -331,13 +331,8 @@ func (c *MediaService) GetAttachmentReader(ctx context.Context, attachment *core
 // key and the pre-Phase-4 server/DM-prefixed legacy keys. Whichever
 // backend has the binary wins.
 //
-// This is load-bearing for pre-locator video variants and thumbnails:
-// `BackfillAttachmentRecords` (long-since deleted) wrote minimal
-// `Attachment{Id, RoomId}` records for those, and
-// `BackfillAttachmentLocatorData` copied those minimal records into
-// legacy `VideoProcessingState.{ThumbnailAttachment, Variants[i].Attachment}`.
-// The EVT manifest migration can import those protos; they have no Storage,
-// so we probe.
+// This is load-bearing for older video variants and thumbnails whose
+// attachment protos have no Storage field, so we probe.
 func (c *MediaService) probeAttachmentReaderByID(ctx context.Context, attachmentID string) (io.Reader, *AttachmentInfo, error) {
 	reader, natsInfo, err := c.GetAttachment(ctx, attachmentID)
 	if err == nil {
@@ -1168,11 +1163,48 @@ func AttachmentNeedsVideoProcessing(attachment *corev1.Attachment, animatedGIF b
 	return strings.HasPrefix(attachment.GetContentType(), "video/") || animatedGIF
 }
 
-// videoProcessingKey returns the legacy SERVER_RUNTIME key for a video's
-// processing state. Legacy migration reads these keys; new processing no
-// longer writes runtime state.
+// videoProcessingKey returns the historical SERVER_RUNTIME key for a video's
+// processing state. New processing no longer writes runtime state.
 func videoProcessingKey(attachmentID string) string {
 	return "video." + attachmentID
+}
+
+// AttachmentBinaryStatus is the tri-state result of probing an attachment's
+// underlying binary. Use this when the absence-vs-can't-tell distinction
+// matters — most importantly, when deciding whether to emit a durable
+// "source missing" terminal event.
+type AttachmentBinaryStatus int
+
+const (
+	// AttachmentBinaryPresent means storage definitively returned the object.
+	AttachmentBinaryPresent AttachmentBinaryStatus = iota
+	// AttachmentBinaryMissing means storage definitively said "not there"
+	// (S3 NoSuchKey / 404, NATS ObjectStore ErrObjectNotFound). Safe to
+	// treat as a permanent terminal state.
+	AttachmentBinaryMissing
+	// AttachmentBinaryUnknown means the probe failed for a reason that
+	// isn't "not found" — auth, network, missing client config, etc. The
+	// binary might still exist; callers must NOT publish missing-source
+	// events on this status, only skip / retry later.
+	AttachmentBinaryUnknown
+)
+
+// attachmentBinaryStatus probes storage for the attachment and classifies the
+// result. The intent is to let callers distinguish "we know it's gone" from
+// "we couldn't reach storage" so transient S3 or configuration issues do not
+// get recorded as durable SOURCE_MISSING events.
+func (c *ChattoCore) attachmentBinaryStatus(ctx context.Context, attachment *corev1.Attachment) AttachmentBinaryStatus {
+	reader, _, err := c.GetAttachmentReader(ctx, attachment)
+	if err == nil {
+		if closer, ok := reader.(io.Closer); ok {
+			_ = closer.Close()
+		}
+		return AttachmentBinaryPresent
+	}
+	if errors.Is(err, jetstream.ErrObjectNotFound) || IsNoSuchKeyError(err) {
+		return AttachmentBinaryMissing
+	}
+	return AttachmentBinaryUnknown
 }
 
 // ScheduleVideoProcessingForMessageAttachment enqueues async processing for a
