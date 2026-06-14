@@ -312,6 +312,15 @@ export type BanRoomMemberInput = {
   userId: Scalars['ID']['input'];
 };
 
+/** Event: A voice call ended in a room. */
+export type CallEndedEvent = {
+  __typename?: 'CallEndedEvent';
+  /** The ID of this call session. */
+  callId: Scalars['ID']['output'];
+  /** The ID of the room where the call ended. */
+  roomId: Scalars['ID']['output'];
+};
+
 /** A participant currently in a voice call. */
 export type CallParticipant = {
   __typename?: 'CallParticipant';
@@ -327,6 +336,8 @@ export type CallParticipant = {
  */
 export type CallParticipantJoinedEvent = {
   __typename?: 'CallParticipantJoinedEvent';
+  /** The ID of this call session. */
+  callId: Scalars['ID']['output'];
   /** The ID of the room where the call is happening. */
   roomId: Scalars['ID']['output'];
 };
@@ -337,7 +348,18 @@ export type CallParticipantJoinedEvent = {
  */
 export type CallParticipantLeftEvent = {
   __typename?: 'CallParticipantLeftEvent';
+  /** The ID of this call session. */
+  callId: Scalars['ID']['output'];
   /** The ID of the room where the call was happening. */
+  roomId: Scalars['ID']['output'];
+};
+
+/** Event: A voice call started in a room. */
+export type CallStartedEvent = {
+  __typename?: 'CallStartedEvent';
+  /** The ID of this call session. */
+  callId: Scalars['ID']['output'];
+  /** The ID of the room where the call started. */
   roomId: Scalars['ID']['output'];
 };
 
@@ -601,7 +623,7 @@ export type EventLogEntry = {
 };
 
 /** Union of every typed event payload exposed by GraphQL. */
-export type EventType = AssetDeletedEvent | AssetProcessingFailedEvent | AssetProcessingStartedEvent | AssetProcessingSucceededEvent | CallParticipantJoinedEvent | CallParticipantLeftEvent | HeartbeatEvent | MentionNotificationEvent | MentionStatusClearedEvent | MessageEditedEvent | MessagePostedEvent | MessageRetractedEvent | NewDirectMessageNotificationEvent | NotificationCreatedEvent | NotificationDismissedEvent | NotificationLevelChangedEvent | PresenceChangedEvent | ReactionAddedEvent | ReactionRemovedEvent | RoomArchivedEvent | RoomCreatedEvent | RoomDeletedEvent | RoomGroupsUpdatedEvent | RoomMarkedAsReadEvent | RoomMemberBannedEvent | RoomMemberUnbannedEvent | RoomUnarchivedEvent | RoomUpdatedEvent | ServerMemberDeletedEvent | ServerUpdatedEvent | ServerUserPreferencesUpdatedEvent | SessionTerminatedEvent | ThreadCreatedEvent | ThreadFollowChangedEvent | UserCreatedEvent | UserDeletedEvent | UserJoinedRoomEvent | UserLeftRoomEvent | UserProfileUpdatedEvent | UserTypingEvent;
+export type EventType = AssetDeletedEvent | AssetProcessingFailedEvent | AssetProcessingStartedEvent | AssetProcessingSucceededEvent | CallEndedEvent | CallParticipantJoinedEvent | CallParticipantLeftEvent | CallStartedEvent | HeartbeatEvent | MentionNotificationEvent | MentionStatusClearedEvent | MessageEditedEvent | MessagePostedEvent | MessageRetractedEvent | NewDirectMessageNotificationEvent | NotificationCreatedEvent | NotificationDismissedEvent | NotificationLevelChangedEvent | PresenceChangedEvent | ReactionAddedEvent | ReactionRemovedEvent | RoomArchivedEvent | RoomCreatedEvent | RoomDeletedEvent | RoomGroupsUpdatedEvent | RoomMarkedAsReadEvent | RoomMemberBannedEvent | RoomMemberUnbannedEvent | RoomUnarchivedEvent | RoomUpdatedEvent | ServerMemberDeletedEvent | ServerUpdatedEvent | ServerUserPreferencesUpdatedEvent | SessionTerminatedEvent | ThreadCreatedEvent | ThreadFollowChangedEvent | UserCreatedEvent | UserDeletedEvent | UserJoinedRoomEvent | UserLeftRoomEvent | UserProfileUpdatedEvent | UserTypingEvent;
 
 /** Fit mode for image transformations. */
 export enum FitMode {
@@ -1178,8 +1200,12 @@ export type Mutation = {
   joinGroup: Array<Scalars['ID']['output']>;
   /** Join the specified room. Returns the joined room. */
   joinRoom: Room;
+  /** Join a room's voice call as the current user. */
+  joinVoiceCall: Scalars['Boolean']['output'];
   /** Leave the specified room. */
   leaveRoom: Scalars['Boolean']['output'];
+  /** Leave a room's voice call as the current user. */
+  leaveVoiceCall: Scalars['Boolean']['output'];
   /**
    * Mark a room as read for the current user.
    * Stores the room's current last root message event ID as the user's read marker.
@@ -1527,8 +1553,20 @@ export type MutationJoinRoomArgs = {
 
 
 /** Root mutation type for modifying data. */
+export type MutationJoinVoiceCallArgs = {
+  input: VoiceCallIntentInput;
+};
+
+
+/** Root mutation type for modifying data. */
 export type MutationLeaveRoomArgs = {
   input: LeaveRoomInput;
+};
+
+
+/** Root mutation type for modifying data. */
+export type MutationLeaveVoiceCallArgs = {
+  input: VoiceCallIntentInput;
 };
 
 
@@ -3720,9 +3758,16 @@ export type ViewerNotificationPreference = {
   level: NotificationLevel;
 };
 
+export type VoiceCallIntentInput = {
+  /** The room whose voice call is being joined or left. */
+  roomId: Scalars['ID']['input'];
+};
+
 /** Token for joining a LiveKit voice call. */
 export type VoiceCallToken = {
   __typename?: 'VoiceCallToken';
+  /** Shared LiveKit E2EE key for this active call. Distributed by Chatto, never by LiveKit. */
+  e2eeKey: Scalars['String']['output'];
   /** The LiveKit JWT token. */
   token: Scalars['String']['output'];
 };
@@ -3806,8 +3851,10 @@ export type RefreshMessageAttachmentUrlsQuery = { __typename?: 'Query', room?: {
         | { __typename: 'AssetProcessingFailedEvent' }
         | { __typename: 'AssetProcessingStartedEvent' }
         | { __typename: 'AssetProcessingSucceededEvent' }
+        | { __typename: 'CallEndedEvent' }
         | { __typename: 'CallParticipantJoinedEvent' }
         | { __typename: 'CallParticipantLeftEvent' }
+        | { __typename: 'CallStartedEvent' }
         | { __typename: 'HeartbeatEvent' }
         | { __typename: 'MentionNotificationEvent' }
         | { __typename: 'MentionStatusClearedEvent' }
@@ -3865,8 +3912,10 @@ export type MessagePreviewQuery = { __typename?: 'Query', server: { __typename?:
         | { __typename: 'AssetProcessingFailedEvent' }
         | { __typename: 'AssetProcessingStartedEvent' }
         | { __typename: 'AssetProcessingSucceededEvent' }
+        | { __typename: 'CallEndedEvent' }
         | { __typename: 'CallParticipantJoinedEvent' }
         | { __typename: 'CallParticipantLeftEvent' }
+        | { __typename: 'CallStartedEvent' }
         | { __typename: 'HeartbeatEvent' }
         | { __typename: 'MentionNotificationEvent' }
         | { __typename: 'MentionStatusClearedEvent' }
@@ -4114,8 +4163,10 @@ export type MyServerEventsSubscription = { __typename?: 'Subscription', myEvents
       | { __typename: 'AssetProcessingFailedEvent', assetId: string, processingRoomId?: string | null, processingMessageEventId?: string | null }
       | { __typename: 'AssetProcessingStartedEvent', assetId: string, processingRoomId?: string | null, processingMessageEventId?: string | null }
       | { __typename: 'AssetProcessingSucceededEvent', assetId: string, processingRoomId?: string | null, processingMessageEventId?: string | null }
+      | { __typename: 'CallEndedEvent' }
       | { __typename: 'CallParticipantJoinedEvent', roomId: string }
       | { __typename: 'CallParticipantLeftEvent', roomId: string }
+      | { __typename: 'CallStartedEvent' }
       | { __typename: 'HeartbeatEvent', alive: boolean }
       | { __typename: 'MentionNotificationEvent', roomId: string, room: { __typename?: 'Room', name: string }, actor?: { __typename?: 'User', id: string, displayName: string } | null }
       | { __typename: 'MentionStatusClearedEvent' }
@@ -4320,8 +4371,10 @@ export type ThreadMessagesPageQuery = { __typename?: 'Query', room?: { __typenam
         | { __typename?: 'AssetProcessingFailedEvent' }
         | { __typename?: 'AssetProcessingStartedEvent' }
         | { __typename?: 'AssetProcessingSucceededEvent' }
+        | { __typename?: 'CallEndedEvent' }
         | { __typename?: 'CallParticipantJoinedEvent' }
         | { __typename?: 'CallParticipantLeftEvent' }
+        | { __typename?: 'CallStartedEvent' }
         | { __typename?: 'HeartbeatEvent' }
         | { __typename?: 'MentionNotificationEvent' }
         | { __typename?: 'MentionStatusClearedEvent' }
@@ -4549,7 +4602,21 @@ export type GetVoiceCallTokenQueryVariables = Exact<{
 }>;
 
 
-export type GetVoiceCallTokenQuery = { __typename?: 'Query', room?: { __typename?: 'Room', voiceCallToken?: { __typename?: 'VoiceCallToken', token: string } | null } | null };
+export type GetVoiceCallTokenQuery = { __typename?: 'Query', room?: { __typename?: 'Room', voiceCallToken?: { __typename?: 'VoiceCallToken', token: string, e2eeKey: string } | null } | null };
+
+export type JoinVoiceCallMutationVariables = Exact<{
+  roomId: Scalars['ID']['input'];
+}>;
+
+
+export type JoinVoiceCallMutation = { __typename?: 'Mutation', joinVoiceCall: boolean };
+
+export type LeaveVoiceCallMutationVariables = Exact<{
+  roomId: Scalars['ID']['input'];
+}>;
+
+
+export type LeaveVoiceCallMutation = { __typename?: 'Mutation', leaveVoiceCall: boolean };
 
 export type LeaveRoomFromModalMutationVariables = Exact<{
   input: LeaveRoomInput;
@@ -4629,8 +4696,10 @@ export type RoomEventViewFragment = { __typename?: 'Event', id: string, createdA
     | { __typename: 'AssetProcessingFailedEvent', assetId: string, processingRoomId?: string | null, processingMessageEventId?: string | null }
     | { __typename: 'AssetProcessingStartedEvent', assetId: string, processingRoomId?: string | null, processingMessageEventId?: string | null }
     | { __typename: 'AssetProcessingSucceededEvent', assetId: string, processingRoomId?: string | null, processingMessageEventId?: string | null }
+    | { __typename: 'CallEndedEvent' }
     | { __typename: 'CallParticipantJoinedEvent', roomId: string }
     | { __typename: 'CallParticipantLeftEvent', roomId: string }
+    | { __typename: 'CallStartedEvent' }
     | { __typename: 'HeartbeatEvent' }
     | { __typename: 'MentionNotificationEvent' }
     | { __typename: 'MentionStatusClearedEvent' }
@@ -4721,8 +4790,10 @@ export type ResolveMessageLinkQuery = { __typename?: 'Query', room?: { __typenam
         | { __typename: 'AssetProcessingFailedEvent' }
         | { __typename: 'AssetProcessingStartedEvent' }
         | { __typename: 'AssetProcessingSucceededEvent' }
+        | { __typename: 'CallEndedEvent' }
         | { __typename: 'CallParticipantJoinedEvent' }
         | { __typename: 'CallParticipantLeftEvent' }
+        | { __typename: 'CallStartedEvent' }
         | { __typename: 'HeartbeatEvent' }
         | { __typename: 'MentionNotificationEvent' }
         | { __typename: 'MentionStatusClearedEvent' }
@@ -5057,7 +5128,9 @@ export const JoinGroupFromDirectoryDocument = {"kind":"Document","definitions":[
 export const GetMyServerRoomsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetMyServerRooms"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"viewer"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"user"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"rooms"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"type"}},{"kind":"Field","name":{"kind":"Name","value":"hasUnread"}},{"kind":"Field","name":{"kind":"Name","value":"archived"}},{"kind":"Field","name":{"kind":"Name","value":"viewerNotificationPreference"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"level"}},{"kind":"Field","name":{"kind":"Name","value":"effectiveLevel"}}]}},{"kind":"Field","name":{"kind":"Name","value":"members"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"IntValue","value":"100"}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"users"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"UserAvatarUser"}}]}}]}}]}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"server"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"roomGroups"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"rooms"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}}]}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"UserAvatarUser"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"User"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"login"}},{"kind":"Field","name":{"kind":"Name","value":"displayName"}},{"kind":"Field","name":{"kind":"Name","value":"avatarUrl"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"width"},"value":{"kind":"IntValue","value":"96"}},{"kind":"Argument","name":{"kind":"Name","value":"height"},"value":{"kind":"IntValue","value":"96"}}]},{"kind":"Field","name":{"kind":"Name","value":"presenceStatus"}}]}}]} as unknown as DocumentNode<GetMyServerRoomsQuery, GetMyServerRoomsQueryVariables>;
 export const GetServerInfoDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetServerInfo"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"server"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"directRegistrationEnabled"}},{"kind":"Field","name":{"kind":"Name","value":"profile"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"welcomeMessage"}},{"kind":"Field","name":{"kind":"Name","value":"description"}},{"kind":"Field","name":{"kind":"Name","value":"logoUrl"}},{"kind":"Field","name":{"kind":"Name","value":"bannerUrl"}}]}}]}}]}}]} as unknown as DocumentNode<GetServerInfoQuery, GetServerInfoQueryVariables>;
 export const GetAuthenticatedServerSettingsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetAuthenticatedServerSettings"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"server"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"pushNotificationsEnabled"}},{"kind":"Field","name":{"kind":"Name","value":"vapidPublicKey"}},{"kind":"Field","name":{"kind":"Name","value":"livekitUrl"}},{"kind":"Field","name":{"kind":"Name","value":"videoProcessingEnabled"}},{"kind":"Field","name":{"kind":"Name","value":"maxUploadSize"}},{"kind":"Field","name":{"kind":"Name","value":"maxVideoUploadSize"}},{"kind":"Field","name":{"kind":"Name","value":"messageEditWindowSeconds"}},{"kind":"Field","name":{"kind":"Name","value":"profile"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"motd"}}]}}]}}]}}]} as unknown as DocumentNode<GetAuthenticatedServerSettingsQuery, GetAuthenticatedServerSettingsQueryVariables>;
-export const GetVoiceCallTokenDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetVoiceCallToken"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"roomId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"room"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"roomId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"roomId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"voiceCallToken"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"token"}}]}}]}}]}}]} as unknown as DocumentNode<GetVoiceCallTokenQuery, GetVoiceCallTokenQueryVariables>;
+export const GetVoiceCallTokenDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"GetVoiceCallToken"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"roomId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"room"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"roomId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"roomId"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"voiceCallToken"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"token"}},{"kind":"Field","name":{"kind":"Name","value":"e2eeKey"}}]}}]}}]}}]} as unknown as DocumentNode<GetVoiceCallTokenQuery, GetVoiceCallTokenQueryVariables>;
+export const JoinVoiceCallDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"JoinVoiceCall"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"roomId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"joinVoiceCall"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"roomId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"roomId"}}}]}}]}]}}]} as unknown as DocumentNode<JoinVoiceCallMutation, JoinVoiceCallMutationVariables>;
+export const LeaveVoiceCallDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"LeaveVoiceCall"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"roomId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"leaveVoiceCall"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"ObjectValue","fields":[{"kind":"ObjectField","name":{"kind":"Name","value":"roomId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"roomId"}}}]}}]}]}}]} as unknown as DocumentNode<LeaveVoiceCallMutation, LeaveVoiceCallMutationVariables>;
 export const LeaveRoomFromModalDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"LeaveRoomFromModal"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"LeaveRoomInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"leaveRoom"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<LeaveRoomFromModalMutation, LeaveRoomFromModalMutationVariables>;
 export const DeleteMessageFromModalDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteMessageFromModal"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeleteMessageInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteMessage"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<DeleteMessageFromModalMutation, DeleteMessageFromModalMutationVariables>;
 export const DeleteLinkPreviewFromModalDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteLinkPreviewFromModal"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"DeleteLinkPreviewInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteLinkPreview"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}]}]}}]} as unknown as DocumentNode<DeleteLinkPreviewFromModalMutation, DeleteLinkPreviewFromModalMutationVariables>;

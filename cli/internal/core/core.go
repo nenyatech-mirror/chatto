@@ -47,6 +47,7 @@ type ChattoCore struct {
 	mentionables       *MentionablesService
 	presenceService    *PresenceService
 	mediaService       *MediaService
+	callService        *CallService
 	assetService       *AssetService
 	s3Client           *S3Client            // Optional S3 client for S3-compatible storage
 	permissionResolver *PermissionResolver  // Hierarchical permission resolver
@@ -141,6 +142,13 @@ type ChattoCore struct {
 	// RoomTimelineProjector runs the consumer for RoomTimeline.
 	// Exposed for WaitFor from message writers.
 	RoomTimelineProjector *events.Projector
+
+	// CallState holds active voice-call participants derived from durable
+	// room-call lifecycle and participant facts.
+	CallState *CallStateProjection
+
+	// CallStateProjector runs the consumer for CallState.
+	CallStateProjector *events.Projector
 
 	// Assets holds durable asset lifecycle and processing state. It consumes
 	// canonical evt.asset.> events plus legacy room-scoped asset events for
@@ -282,6 +290,7 @@ func (c *ChattoCore) Run(ctx context.Context) error {
 	})
 
 	g.Go(func() error { return c.presenceService.Run(gctx) })
+	g.Go(func() error { return c.callService.Run(gctx) })
 
 	return g.Wait()
 }
@@ -381,6 +390,7 @@ func (c *ChattoCore) assetURL(path string) string {
 type encryptionManager struct {
 	keyWrapper  kms.KeyWrapper
 	legacyKeys  kms.LegacyKeyProvider
+	callKeys    kms.CallKeyStore
 	contentKeys *dekstore.Store
 }
 
@@ -689,6 +699,7 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 	encMgr := &encryptionManager{
 		keyWrapper:  builtinKMS,
 		legacyKeys:  builtinKMS,
+		callKeys:    builtinKMS,
 		contentKeys: dekstore.New(storage.runtimeStateKV, logger.WithPrefix("core.dekstore")),
 	}
 
@@ -751,6 +762,9 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 	// iterate significantly on this once we observe read patterns.
 	roomTimeline := NewRoomTimelineProjection()
 	roomTimelineProjector := newProjector(roomTimeline, "Room Timeline", roomTimeline.adminProjectionEstimate)
+
+	callState := NewCallStateProjection()
+	callStateProjector := newProjector(callState, "Call State", callState.adminProjectionEstimate)
 
 	assetProjection := NewAssetProjection()
 	assetProjector := newProjector(assetProjection, "Assets", assetProjection.adminProjectionEstimate)
@@ -818,6 +832,8 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 		RoomLayout:               roomLayout,
 		RoomTimeline:             roomTimeline,
 		RoomTimelineProjector:    roomTimelineProjector,
+		CallState:                callState,
+		CallStateProjector:       callStateProjector,
 		Assets:                   assetProjection,
 		AssetsProjector:          assetProjector,
 		Threads:                  threads,
@@ -837,6 +853,7 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 	}
 
 	core.mediaService = NewMediaService(core)
+	core.callService = NewCallService(eventPublisher, callState, callStateProjector, encMgr.callKeys, nil, logger.WithPrefix("core.CallService"))
 	core.assetService = NewAssetService(core)
 
 	if err := core.seedDefaultRBAC(ctx); err != nil {
@@ -966,7 +983,7 @@ func newStorage(js jetstream.JetStream, ctx context.Context, cfg config.CoreConf
 	}
 
 	// EVT — the event-sourcing log (ADR-033/034).
-	// Subjects are evt.{aggregateType}.{aggregateId}; live.evt.> is
+	// Subjects are evt.{aggregateType}.{aggregateId}.{eventType}; live.evt.> is
 	// the republish target so projections and live subscribers consume
 	// from a single NATS Core path.
 	serverEvtStream, err := js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
@@ -1211,7 +1228,8 @@ func isTerminalIteratorError(err error) bool {
 // authorization before forwarding the event through GraphQL.
 //
 // Authorization:
-//   - Room events (live.sync.room.> and deliverable live.evt.room.>) are delivered only for rooms
+//   - Room-scoped events (live.sync.room.> and deliverable live.evt.room.>)
+//     are delivered only for rooms
 //     where the user is a member. The membership set is pre-loaded
 //     across both kinds (channel + dm) and updated as join/leave/
 //     room-deleted events arrive.
@@ -1720,6 +1738,12 @@ func (c *ChattoCore) waitForLiveEVTRoomEvent(ctx context.Context, subject string
 	pos := events.SubjectPosition(subject, seq)
 	if err := c.roomService.waitForLiveEVTEvent(ctx, pos, event); err != nil {
 		return err
+	}
+
+	if eventNeedsCallStateProjection(event) {
+		if err := c.CallStateProjector.WaitFor(ctx, pos); err != nil {
+			return err
+		}
 	}
 
 	if isAssetLifecycleEvent(event) {
