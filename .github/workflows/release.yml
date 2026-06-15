@@ -43,6 +43,7 @@ jobs:
           while IFS= read -r path; do
             case "$path" in
               .release-please-config.json|\
+              .release-please-config-main.json|\
               .release-please-manifest.json|\
               .release-please-manifest-main.json|\
               CHANGELOG.md|\
