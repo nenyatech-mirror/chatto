@@ -8,22 +8,25 @@ mounting the full chat room shell.
 <script lang="ts">
   import { useRoomMembersSync } from '$lib/hooks/useRoomMembersSync.svelte';
   import type { RoomData } from '$lib/hooks/useRoomData.svelte';
-  import {
-    createPresenceCache,
-    type PresenceCache
-  } from '$lib/state/presenceCache.svelte';
-  import RoomSidebar from './RoomSidebar.svelte';
+  import { createPresenceCache, type PresenceCache } from '$lib/state/presenceCache.svelte';
+  import RoomSidebar, { type RoomSidebarPanel } from './RoomSidebar.svelte';
 
   let {
     roomId = 'room-1',
     roomData,
+    activePanel = 'members',
+    presentation = 'desktop',
     currentUserId = 'viewer',
-    onPresenceCacheReady
+    onPresenceCacheReady,
+    onClose
   }: {
     roomId?: string;
     roomData: RoomData;
+    activePanel?: RoomSidebarPanel;
+    presentation?: 'desktop' | 'overlay';
     currentUserId?: string | null;
     onPresenceCacheReady?: (cache: PresenceCache) => void;
+    onClose?: () => void;
   } = $props();
 
   const presenceCache = createPresenceCache();
@@ -41,8 +44,11 @@ mounting the full chat room shell.
 
 <RoomSidebar
   {roomId}
+  {activePanel}
+  {presentation}
   loading={false}
   canBanRoomMembers={false}
   {currentUserId}
   onLoadMoreMembers={roomMembers.loadMoreMembers}
+  {onClose}
 />
