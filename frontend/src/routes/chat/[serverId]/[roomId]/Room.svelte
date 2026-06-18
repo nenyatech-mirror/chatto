@@ -144,6 +144,9 @@
 
   // Room permissions — derived reactively, no $effect needed
   let permissions = $derived(room.roomData ?? DEFAULT_ROOM_PERMISSIONS);
+  let composerCanAttach = $derived(
+    room.roomData === undefined ? true : permissions.canAttach
+  );
 
   createRoomPermissions(() => permissions);
 
@@ -340,9 +343,9 @@
   let isDraggingFiles = $state(false);
   let composerApi = $state<MessageComposerApi | null>(null);
 
-  // Drop zone attachment - only active when user can post messages
+  // Drop zone attachment - only active when user can post and attach files.
   const roomDropZone = $derived(
-    room.roomData?.canPostMessage
+    room.roomData?.canPostMessage && room.roomData?.canAttach
       ? dropZone({
           onDrop: (files) => composerApi?.addFiles(files),
           onDragStateChange: (dragging) => (isDraggingFiles = dragging),
@@ -478,6 +481,7 @@
         <MessageComposer
           {roomId}
           canPost={permissions.canPostMessage}
+          canAttach={composerCanAttach}
           inReplyTo={replyState.messageEventId ?? undefined}
           replyDisplayName={replyState.actorDisplayName || undefined}
           replyExcerpt={replyState.excerpt || undefined}
@@ -496,6 +500,7 @@
           threadRootEventId={threadId}
           onClose={closeThread}
           canPostInThread={room.roomData.canPostInThread}
+          canAttach={room.roomData.canAttach}
           canEchoMessage={room.roomData.canEchoMessage && room.roomData.canPostMessage}
           highlightEventId={pendingThreadHighlight}
           onHighlightComplete={() => {

@@ -66,6 +66,7 @@
     replyExcerpt,
     placeholder: customPlaceholder,
     canPost = true,
+    canAttach = true,
     autoFocus = true,
     onReady,
     onTyping,
@@ -81,6 +82,7 @@
     replyExcerpt?: string;
     placeholder?: string;
     canPost?: boolean;
+    canAttach?: boolean;
     autoFocus?: boolean;
     onReady?: (api: MessageComposerApi) => void;
     onTyping?: () => void;
@@ -303,19 +305,27 @@
   // so users can type the next message while the current one is in flight.
   let inputDisabled = $derived(!canPost || connection().showConnectionLostBanner);
 
+  let hasSendableAttachments = $derived(canAttach && attachments.selectedFiles.length > 0);
+
   // Can submit when there's content, not currently sending, and input is enabled.
   // hasVisibleContent rejects messages with only invisible Unicode characters.
   let canSubmit = $derived(
     !loading &&
       !inputDisabled &&
       attachments.pendingCount === 0 &&
-      (hasVisibleContent(message) || attachments.selectedFiles.length > 0 || isEditing)
+      (hasVisibleContent(message) || hasSendableAttachments || isEditing)
   );
   let editorNextEnterWillSend = $state(false);
   let nextEnterWillSend = $derived(canSubmit && editorNextEnterWillSend);
   let submitHint = $derived(
     shortcutHints ? (nextEnterWillSend ? shortcutHints.enterAgain : shortcutHints.submit) : null
   );
+
+  $effect(() => {
+    if (!canAttach && attachments.filesWithUrls.length > 0) {
+      attachments.clear();
+    }
+  });
 
   // Auto-focus the input when the component mounts, room changes, a reply
   // starts, or the editor becomes editable (canPost loads async after a
@@ -360,6 +370,10 @@
 
   function handleFileSelect(event: Event) {
     const target = event.target as HTMLInputElement;
+    if (!canAttach) {
+      target.value = '';
+      return;
+    }
     if (target.files) {
       void attachments.stageFiles(Array.from(target.files));
     }
@@ -376,6 +390,7 @@
    * Creates object URLs for preview and adds to the attachment list.
    */
   async function addFiles(files: File[]) {
+    if (!canAttach) return;
     await attachments.stageFiles(files);
   }
 
@@ -410,6 +425,7 @@
     }
 
     if (pastedFiles.length > 0) {
+      if (!canAttach) return true;
       void attachments.stageFiles(pastedFiles);
       return true; // Prevent TipTap from processing the paste
     }
@@ -569,8 +585,7 @@
     // hasVisibleContent rejects messages with only invisible Unicode characters.
     const bodyToSend = bodyForSend(message);
     const hasBody = hasVisibleContent(bodyToSend);
-    const filesToSend =
-      attachments.selectedFiles.length > 0 ? [...attachments.selectedFiles] : null;
+    const filesToSend = hasSendableAttachments ? [...attachments.selectedFiles] : null;
     if (!hasBody && !filesToSend) return;
 
     const preparedPost: PreparedPost = {
@@ -832,14 +847,16 @@
   {/if}
 
   <!-- Hidden file input -->
-  <input
-    bind:this={fileInputElement}
-    type="file"
-    accept={attachments.accept}
-    multiple
-    onchange={handleFileSelect}
-    class="hidden"
-  />
+  {#if canAttach && !isEditing}
+    <input
+      bind:this={fileInputElement}
+      type="file"
+      accept={attachments.accept}
+      multiple
+      onchange={handleFileSelect}
+      class="hidden"
+    />
+  {/if}
 
   <!-- Unified input container -->
   <div
@@ -872,7 +889,7 @@
       />
     {/if}
     <!-- Attachment button - hidden in edit mode (editMessage only supports text) -->
-    {#if !isEditing}
+    {#if !isEditing && canAttach}
       <button
         type="button"
         onclick={() => fileInputElement?.click()}
