@@ -7,5 +7,10 @@
       "type": "service",
       "command": "mise run chatto run"
     }
+  },
+  "metadataGeneration": {
+    "branchName": {
+      "instructions": "Use conventional commit branch prefixes, eg. fix/, feat/, perf/ etc."
+    }
   }
 }
