@@ -1,0 +1,11 @@
+{
+  "worktree": {
+    "setup": "mise trust && mise setup"
+  },
+  "scripts": {
+    "dev": {
+      "type": "service",
+      "command": "mise dev"
+    }
+  }
+}
