@@ -55,7 +55,9 @@ interface ListActiveCallRoomsResponse {
 }
 
 interface ListCallParticipantsResponse {
-  participants?: Array<{ user?: { id?: string; displayName?: string; login?: string } }>;
+  participants?: Array<{
+    user?: { user?: { id?: string; displayName?: string; login?: string } };
+  }>;
 }
 
 interface ServerStateResponse {
@@ -262,8 +264,8 @@ test.describe('Voice calls', () => {
       // Query participants — should now include User B
       const afterParticipants = await listCallParticipantsViaConnect(page, roomId);
       expect(afterParticipants).toHaveLength(1);
-      expect(afterParticipants[0].user?.id).toBe(userB.id);
-      expect(afterParticipants[0].user?.login).toBe(userB.login);
+      expect(afterParticipants[0].user?.user?.id).toBe(userB.id);
+      expect(afterParticipants[0].user?.user?.login).toBe(userB.login);
 
       // Simulate leave
       await page.request.post('/webhooks/test/call-leave', {
