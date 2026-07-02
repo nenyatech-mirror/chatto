@@ -1,16 +1,19 @@
 import { Timestamp } from '@bufbuild/protobuf';
+import { Code, ConnectError } from '@connectrpc/connect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PresenceStatus as APIPresenceStatus } from '@chatto/api-types/api/v1/presence_pb';
-import { PresenceStatus } from '@chatto/api-client/renderTypes';
-import { createNotificationAPI, NotificationItemKind } from '@chatto/api-client/notifications';
+import { PresenceStatus } from '$lib/api-client/renderTypes';
+import { createNotificationAPI, NotificationItemKind } from '$lib/api-client/notifications';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createConnectTransport: vi.fn(),
   listNotifications: vi.fn(),
+  getNotification: vi.fn(),
+  batchGetNotifications: vi.fn(),
   listRoomNotifications: vi.fn(),
   hasNotifications: vi.fn(),
-  listNotificationCounts: vi.fn(),
+  listRoomNotificationCounts: vi.fn(),
   dismissNotification: vi.fn(),
   dismissAllNotifications: vi.fn()
 }));
@@ -32,17 +35,21 @@ describe('createNotificationAPI', () => {
     mocks.createClient.mockReset();
     mocks.createConnectTransport.mockReset();
     mocks.listNotifications.mockReset();
+    mocks.getNotification.mockReset();
+    mocks.batchGetNotifications.mockReset();
     mocks.listRoomNotifications.mockReset();
     mocks.hasNotifications.mockReset();
-    mocks.listNotificationCounts.mockReset();
+    mocks.listRoomNotificationCounts.mockReset();
     mocks.dismissNotification.mockReset();
     mocks.dismissAllNotifications.mockReset();
     mocks.createConnectTransport.mockReturnValue({ kind: 'transport' });
     mocks.createClient.mockReturnValue({
       listNotifications: mocks.listNotifications,
+      getNotification: mocks.getNotification,
+      batchGetNotifications: mocks.batchGetNotifications,
       listRoomNotifications: mocks.listRoomNotifications,
       hasNotifications: mocks.hasNotifications,
-      listNotificationCounts: mocks.listNotificationCounts,
+      listRoomNotificationCounts: mocks.listRoomNotificationCounts,
       dismissNotification: mocks.dismissNotification,
       dismissAllNotifications: mocks.dismissAllNotifications
     });
@@ -52,7 +59,7 @@ describe('createNotificationAPI', () => {
     mocks.listNotifications.mockResolvedValue({
       page: { totalCount: 2n, hasMore: true },
       serverName: 'Remote',
-      items: [
+      notifications: [
         {
           id: 'n1',
           createdAt: Timestamp.fromDate(new Date('2026-06-01T12:00:00Z')),
@@ -122,7 +129,7 @@ describe('createNotificationAPI', () => {
   it('maps room notification reads and dismiss mutations without auth headers', async () => {
     mocks.listRoomNotifications.mockResolvedValue({
       page: { totalCount: 1n, hasMore: false },
-      items: [
+      notifications: [
         {
           id: 'n2',
           kind: { case: 'directMessage', value: { roomId: 'dm-1', eventId: 'event-2' } }
@@ -130,7 +137,7 @@ describe('createNotificationAPI', () => {
       ]
     });
     mocks.hasNotifications.mockResolvedValue({ hasNotifications: true });
-    mocks.listNotificationCounts.mockResolvedValue({
+    mocks.listRoomNotificationCounts.mockResolvedValue({
       roomCounts: [
         { roomId: 'room-1', totalCount: 2 },
         { roomId: 'dm-1', totalCount: 1 }
@@ -159,5 +166,66 @@ describe('createNotificationAPI', () => {
       { roomId: 'dm-1', page: { limit: 1, offset: 0 } },
       { headers: undefined }
     );
+  });
+
+  it('gets and batch gets notifications', async () => {
+    const item = {
+      id: 'n1',
+      createdAt: Timestamp.fromDate(new Date('2026-06-01T12:00:00Z')),
+      actor: {
+        user: {
+          id: 'u1',
+          login: 'alice',
+          displayName: 'Alice',
+          deleted: false
+        },
+        presenceStatus: APIPresenceStatus.ONLINE
+      },
+      kind: {
+        case: 'reply',
+        value: {
+          room: { id: 'room-1', name: 'general' },
+          eventId: 'event-2',
+          inReplyToId: 'event-1'
+        }
+      }
+    };
+    mocks.getNotification.mockResolvedValue({ notification: item, serverName: 'Remote' });
+    mocks.batchGetNotifications.mockResolvedValue({ notifications: [item], serverName: 'Remote' });
+
+    const api = createNotificationAPI({
+      baseUrl: 'https://remote.example.com/api/connect',
+      bearerToken: 'token'
+    });
+
+    await expect(api.getNotification('n1')).resolves.toMatchObject({
+      item: {
+        kind: NotificationItemKind.Reply,
+        id: 'n1',
+        replyRoom: { id: 'room-1', name: 'general' }
+      },
+      serverName: 'Remote'
+    });
+    await expect(api.batchGetNotifications(['n1', 'missing'])).resolves.toMatchObject({
+      items: [{ id: 'n1', kind: NotificationItemKind.Reply }],
+      serverName: 'Remote'
+    });
+
+    expect(mocks.getNotification).toHaveBeenCalledWith(
+      { notificationId: 'n1' },
+      { headers: { Authorization: 'Bearer token' } }
+    );
+    expect(mocks.batchGetNotifications).toHaveBeenCalledWith(
+      { notificationIds: ['n1', 'missing'] },
+      { headers: { Authorization: 'Bearer token' } }
+    );
+  });
+
+  it('returns null when a notification is missing', async () => {
+    mocks.getNotification.mockRejectedValue(new ConnectError('missing', Code.NotFound));
+
+    const api = createNotificationAPI({ baseUrl: '/api/connect', bearerToken: null });
+
+    await expect(api.getNotification('missing')).resolves.toBeNull();
   });
 });

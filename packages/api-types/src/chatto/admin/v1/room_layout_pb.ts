@@ -99,7 +99,7 @@ export class AdminRoomLayoutItem extends Message<AdminRoomLayoutItem> {
 }
 
 /**
- * Ordered room group used by authenticated clients and the admin layout editor.
+ * Ordered room group returned after admin layout mutations.
  *
  * @generated from message chatto.admin.v1.AdminRoomLayoutGroup
  */
@@ -126,13 +126,6 @@ export class AdminRoomLayoutGroup extends Message<AdminRoomLayoutGroup> {
   description = "";
 
   /**
-   * Channel rooms in this group order.
-   *
-   * @generated from field: repeated chatto.api.v1.Room rooms = 4;
-   */
-  rooms: Room[] = [];
-
-  /**
    * Mixed room/sidebar-link entries in sidebar order.
    *
    * @generated from field: repeated chatto.admin.v1.AdminRoomLayoutItem items = 5;
@@ -150,7 +143,6 @@ export class AdminRoomLayoutGroup extends Message<AdminRoomLayoutGroup> {
     { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "description", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 4, name: "rooms", kind: "message", T: Room, repeated: true },
     { no: 5, name: "items", kind: "message", T: AdminRoomLayoutItem, repeated: true },
   ]);
 
@@ -217,80 +209,6 @@ export class AdminRoomLayoutItemInput extends Message<AdminRoomLayoutItemInput> 
 
   static equals(a: AdminRoomLayoutItemInput | PlainMessage<AdminRoomLayoutItemInput> | undefined, b: AdminRoomLayoutItemInput | PlainMessage<AdminRoomLayoutItemInput> | undefined): boolean {
     return proto3.util.equals(AdminRoomLayoutItemInput, a, b);
-  }
-}
-
-/**
- * Request to read the admin room layout.
- *
- * @generated from message chatto.admin.v1.ListAdminRoomLayoutRequest
- */
-export class ListAdminRoomLayoutRequest extends Message<ListAdminRoomLayoutRequest> {
-  constructor(data?: PartialMessage<ListAdminRoomLayoutRequest>) {
-    super();
-    proto3.util.initPartial(data, this);
-  }
-
-  static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.admin.v1.ListAdminRoomLayoutRequest";
-  static readonly fields: FieldList = proto3.util.newFieldList(() => [
-  ]);
-
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAdminRoomLayoutRequest {
-    return new ListAdminRoomLayoutRequest().fromBinary(bytes, options);
-  }
-
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAdminRoomLayoutRequest {
-    return new ListAdminRoomLayoutRequest().fromJson(jsonValue, options);
-  }
-
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAdminRoomLayoutRequest {
-    return new ListAdminRoomLayoutRequest().fromJsonString(jsonString, options);
-  }
-
-  static equals(a: ListAdminRoomLayoutRequest | PlainMessage<ListAdminRoomLayoutRequest> | undefined, b: ListAdminRoomLayoutRequest | PlainMessage<ListAdminRoomLayoutRequest> | undefined): boolean {
-    return proto3.util.equals(ListAdminRoomLayoutRequest, a, b);
-  }
-}
-
-/**
- * Finite snapshot of the current room layout.
- *
- * @generated from message chatto.admin.v1.ListAdminRoomLayoutResponse
- */
-export class ListAdminRoomLayoutResponse extends Message<ListAdminRoomLayoutResponse> {
-  /**
-   * Room groups in sidebar order.
-   *
-   * @generated from field: repeated chatto.admin.v1.AdminRoomLayoutGroup groups = 1;
-   */
-  groups: AdminRoomLayoutGroup[] = [];
-
-  constructor(data?: PartialMessage<ListAdminRoomLayoutResponse>) {
-    super();
-    proto3.util.initPartial(data, this);
-  }
-
-  static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.admin.v1.ListAdminRoomLayoutResponse";
-  static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "groups", kind: "message", T: AdminRoomLayoutGroup, repeated: true },
-  ]);
-
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListAdminRoomLayoutResponse {
-    return new ListAdminRoomLayoutResponse().fromBinary(bytes, options);
-  }
-
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListAdminRoomLayoutResponse {
-    return new ListAdminRoomLayoutResponse().fromJson(jsonValue, options);
-  }
-
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListAdminRoomLayoutResponse {
-    return new ListAdminRoomLayoutResponse().fromJsonString(jsonString, options);
-  }
-
-  static equals(a: ListAdminRoomLayoutResponse | PlainMessage<ListAdminRoomLayoutResponse> | undefined, b: ListAdminRoomLayoutResponse | PlainMessage<ListAdminRoomLayoutResponse> | undefined): boolean {
-    return proto3.util.equals(ListAdminRoomLayoutResponse, a, b);
   }
 }
 
@@ -398,18 +316,19 @@ export class UpdateRoomGroupRequest extends Message<UpdateRoomGroupRequest> {
   groupId = "";
 
   /**
-   * Required group display name.
+   * New group display name, when changing it.
    *
-   * @generated from field: string name = 2;
+   * @generated from field: optional string name = 2;
    */
-  name = "";
+  name?: string;
 
   /**
-   * Optional public group description.
+   * New public group description, when changing it. Empty clears the
+   * description.
    *
-   * @generated from field: string description = 3;
+   * @generated from field: optional string description = 3;
    */
-  description = "";
+  description?: string;
 
   constructor(data?: PartialMessage<UpdateRoomGroupRequest>) {
     super();
@@ -420,8 +339,8 @@ export class UpdateRoomGroupRequest extends Message<UpdateRoomGroupRequest> {
   static readonly typeName = "chatto.admin.v1.UpdateRoomGroupRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "group_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 3, name: "description", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 3, name: "description", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): UpdateRoomGroupRequest {
@@ -939,18 +858,18 @@ export class UpdateSidebarLinkRequest extends Message<UpdateSidebarLinkRequest> 
   linkId = "";
 
   /**
-   * Required display label.
+   * New display label, when changing it.
    *
-   * @generated from field: string label = 2;
+   * @generated from field: optional string label = 2;
    */
-  label = "";
+  label?: string;
 
   /**
-   * Required absolute http(s) URL or server-local path.
+   * New absolute http(s) URL or server-local path, when changing it.
    *
-   * @generated from field: string url = 3;
+   * @generated from field: optional string url = 3;
    */
-  url = "";
+  url?: string;
 
   constructor(data?: PartialMessage<UpdateSidebarLinkRequest>) {
     super();
@@ -961,8 +880,8 @@ export class UpdateSidebarLinkRequest extends Message<UpdateSidebarLinkRequest> 
   static readonly typeName = "chatto.admin.v1.UpdateSidebarLinkRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "link_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 2, name: "label", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 3, name: "url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "label", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 3, name: "url", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): UpdateSidebarLinkRequest {

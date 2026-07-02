@@ -11,6 +11,10 @@ For public API packages:
   ConnectRPC API consistency rules.
 - Follow [chatto/admin/v1/AGENTS.md](chatto/admin/v1/AGENTS.md) for
   administrative ConnectRPC API consistency rules.
+- Follow [chatto/auth/v1/AGENTS.md](chatto/auth/v1/AGENTS.md) for public auth
+  and capability-token ConnectRPC API consistency rules.
+- Follow [chatto/discovery/v1/AGENTS.md](chatto/discovery/v1/AGENTS.md) for
+  unauthenticated discovery/bootstrap ConnectRPC API consistency rules.
 - Follow [chatto/realtime/v1/AGENTS.md](chatto/realtime/v1/AGENTS.md) for the
   realtime WebSocket protobuf protocol.
 - Write comments for API consumers, not Chatto maintainers.
@@ -39,11 +43,64 @@ For public API packages:
 
 ## Presence And API Shape
 
-- For public API messages under `chatto/api/v1`, `chatto/admin/v1`, and
-  `chatto/realtime/v1`, use proto3 `optional` scalar fields when clients must
-  distinguish absent/unhydrated/unknown from a scalar default.
+- Public ConnectRPC and realtime surfaces are product APIs, not adapters for the
+  current frontend. Define the natural public, administrative, auth, discovery,
+  or realtime operation even when the bundled frontend does not call every RPC
+  yet.
+- Prefer resource-oriented services with obvious ownership and scope. New
+  resource services should establish a repeatable CRUD-like pattern for future
+  features:
+  - `List<ResourcePlural>` for visible collections.
+  - `Get<Resource>` for one resource by ID or equivalent lookup target.
+  - `BatchGet<ResourcePlural>` when clients commonly hydrate many resources or
+    realtime/list results carry only IDs.
+  - `Create<Resource>`, `Update<Resource>`, and `Delete<Resource>` for normal
+    writes.
+  - Domain verbs only when CRUD names would hide important lifecycle,
+    authorization, audit, or product semantics.
+- Keep services exhaustive for their resource and scope. Do not omit sensible
+  list/get/batch/update/delete operations only because the current frontend does
+  not need them yet.
+- Batch hydration is part of the API design, not an optimization afterthought.
+  If a resource can appear by ID in lists, includes, notifications, realtime
+  events, or related resources, provide `BatchGet*`, include maps, or another
+  documented bounded-fanout pattern so clients do not need N+1 reads.
+- Public resource messages should be canonical per resource. Avoid multiple
+  frontend-shaped variants of the same thing. Add narrower messages only when
+  authorization, visibility, lifecycle, or performance semantics differ, and
+  document that reason in the message comment.
+- Prefer returning rich protobuf messages over scalar acknowledgements when the
+  server can do so without changing authorization or forcing expensive extra
+  reads. This keeps create/update/delete responses forward-compatible and
+  aligned with list/get/batch shapes.
+- For public API messages under `chatto/api/v1`, `chatto/admin/v1`,
+  `chatto/auth/v1`, `chatto/discovery/v1`, and `chatto/realtime/v1`, use proto3
+  `optional` scalar fields when clients must distinguish
+  absent/unhydrated/unknown from a scalar default.
 - Avoid parallel `*_present` booleans for simple scalar presence.
-- Use enums or oneofs only when modeling multiple meaningful availability states.
+- Use enums or oneofs only when modeling multiple meaningful availability states
+  or mutually exclusive request targets.
+- When one operation targets the same resource by multiple equivalent
+  identifiers, use a request `oneof`; do not use parallel optional/string
+  identifier fields. Split into separate RPCs only when authorization,
+  visibility, absence semantics, response shape, or performance behavior differ.
+- `Update*` request messages should model patch semantics with optional scalar
+  fields or a field mask. Full replacement operations should be named
+  `Replace*` or have an explicit compatibility rationale.
+- Avoid using response-rich messages as request inputs when some fields are
+  ignored. Prefer request-only input messages that contain exactly the accepted
+  fields.
+- Keep authorization, visibility, and absence boundaries consistent across
+  related APIs. A `List*` result should not reveal resource state that the
+  matching `Get*` or `BatchGet*` contract then refuses to hydrate, unless that
+  redacted/indicator state is explicitly modeled.
+- Singular `Get*` methods return `NOT_FOUND` when absence is the error result.
+  `BatchGet*` and list methods may omit missing or inaccessible resources, but
+  document that behavior on the RPC.
+- Generated public docs and TypeScript bindings are part of the API surface.
+  When adding public RPCs, regenerate `@chatto/api-types` and docs in the same
+  change. Do not recreate a handwritten API-client package; bundled frontend
+  adapters belong under `apps/frontend/src/lib/api-client`.
 
 ## Code Generation
 

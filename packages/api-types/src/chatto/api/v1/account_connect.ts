@@ -3,24 +3,26 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { DeleteAvatarRequest, DeleteAvatarResponse, DeleteMyAccountRequest, DeleteMyAccountResponse, RequestAccountDeletionRequest, RequestAccountDeletionResponse, SetPasswordRequest, SetPasswordResponse, UpdateProfileRequest, UpdateProfileResponse, UpdateSettingsRequest, UpdateSettingsResponse, UploadAvatarRequest, UploadAvatarResponse } from "./account_pb.js";
+import { DeleteAvatarRequest, DeleteAvatarResponse, DeleteMyAccountRequest, DeleteMyAccountResponse, RequestAccountDeletionRequest, RequestAccountDeletionResponse, UpdatePasswordRequest, UpdatePasswordResponse, UpdateProfileRequest, UpdateProfileResponse, UpdateSettingsRequest, UpdateSettingsResponse, UploadAvatarRequest, UploadAvatarResponse } from "./account_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
-import { ReportPresenceRequest, ReportPresenceResponse } from "./presence_pb.js";
-import { ClearCustomStatusRequest, ClearCustomStatusResponse, SetCustomStatusRequest, SetCustomStatusResponse } from "./user_status_pb.js";
+import { DisconnectExternalIdentityRequest, DisconnectExternalIdentityResponse, LinkExternalIdentityRequest, LinkExternalIdentityResponse, ListExternalIdentitiesRequest, ListExternalIdentitiesResponse, StartExternalIdentityLinkRequest, StartExternalIdentityLinkResponse } from "./external_identities_pb.js";
+import { UpdatePresenceRequest, UpdatePresenceResponse } from "./presence_pb.js";
+import { DeleteCustomStatusRequest, DeleteCustomStatusResponse, UpdateCustomStatusRequest, UpdateCustomStatusResponse } from "./user_status_pb.js";
 
 /**
- * Self-service account, profile, avatar, display preference, presence, and
- * custom-status commands.
+ * Self-service account, profile, avatar, display preference, presence,
+ * custom-status, external identity, and account lifecycle commands for the
+ * authenticated user.
  *
- * @generated from service chatto.api.v1.AccountService
+ * @generated from service chatto.api.v1.MyAccountService
  */
-export const AccountService = {
-  typeName: "chatto.api.v1.AccountService",
+export const MyAccountService = {
+  typeName: "chatto.api.v1.MyAccountService",
   methods: {
     /**
      * Updates the authenticated user's login and/or display name.
      *
-     * @generated from rpc chatto.api.v1.AccountService.UpdateProfile
+     * @generated from rpc chatto.api.v1.MyAccountService.UpdateProfile
      */
     updateProfile: {
       name: "UpdateProfile",
@@ -31,7 +33,7 @@ export const AccountService = {
     /**
      * Uploads and sets the authenticated user's avatar.
      *
-     * @generated from rpc chatto.api.v1.AccountService.UploadAvatar
+     * @generated from rpc chatto.api.v1.MyAccountService.UploadAvatar
      */
     uploadAvatar: {
       name: "UploadAvatar",
@@ -42,7 +44,7 @@ export const AccountService = {
     /**
      * Deletes the authenticated user's avatar. The call is idempotent.
      *
-     * @generated from rpc chatto.api.v1.AccountService.DeleteAvatar
+     * @generated from rpc chatto.api.v1.MyAccountService.DeleteAvatar
      */
     deleteAvatar: {
       name: "DeleteAvatar",
@@ -51,20 +53,20 @@ export const AccountService = {
       kind: MethodKind.Unary,
     },
     /**
-     * Sets or changes the authenticated user's password.
+     * Updates or adds the authenticated user's password.
      *
-     * @generated from rpc chatto.api.v1.AccountService.SetPassword
+     * @generated from rpc chatto.api.v1.MyAccountService.UpdatePassword
      */
-    setPassword: {
-      name: "SetPassword",
-      I: SetPasswordRequest,
-      O: SetPasswordResponse,
+    updatePassword: {
+      name: "UpdatePassword",
+      I: UpdatePasswordRequest,
+      O: UpdatePasswordResponse,
       kind: MethodKind.Unary,
     },
     /**
      * Updates the authenticated user's display preferences.
      *
-     * @generated from rpc chatto.api.v1.AccountService.UpdateSettings
+     * @generated from rpc chatto.api.v1.MyAccountService.UpdateSettings
      */
     updateSettings: {
       name: "UpdateSettings",
@@ -73,46 +75,92 @@ export const AccountService = {
       kind: MethodKind.Unary,
     },
     /**
-     * Reports the current user's live presence status. This state is transient:
+     * Lists configured external identity providers and identities linked to the
+     * authenticated account.
+     *
+     * @generated from rpc chatto.api.v1.MyAccountService.ListExternalIdentities
+     */
+    listExternalIdentities: {
+      name: "ListExternalIdentities",
+      I: ListExternalIdentitiesRequest,
+      O: ListExternalIdentitiesResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Creates a short-lived browser handoff URL for linking a provider identity
+     * to the authenticated account.
+     *
+     * @generated from rpc chatto.api.v1.MyAccountService.StartExternalIdentityLink
+     */
+    startExternalIdentityLink: {
+      name: "StartExternalIdentityLink",
+      I: StartExternalIdentityLinkRequest,
+      O: StartExternalIdentityLinkResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Links a pending provider identity to the authenticated account.
+     *
+     * @generated from rpc chatto.api.v1.MyAccountService.LinkExternalIdentity
+     */
+    linkExternalIdentity: {
+      name: "LinkExternalIdentity",
+      I: LinkExternalIdentityRequest,
+      O: LinkExternalIdentityResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Disconnects a provider identity from the authenticated account.
+     *
+     * @generated from rpc chatto.api.v1.MyAccountService.DisconnectExternalIdentity
+     */
+    disconnectExternalIdentity: {
+      name: "DisconnectExternalIdentity",
+      I: DisconnectExternalIdentityRequest,
+      O: DisconnectExternalIdentityResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Updates the current user's live presence status. This state is transient:
      * clients should refresh it periodically while visible, and should stop
      * calling this RPC when the user chooses to appear offline.
      *
-     * @generated from rpc chatto.api.v1.AccountService.ReportPresence
+     * @generated from rpc chatto.api.v1.MyAccountService.UpdatePresence
      */
-    reportPresence: {
-      name: "ReportPresence",
-      I: ReportPresenceRequest,
-      O: ReportPresenceResponse,
+    updatePresence: {
+      name: "UpdatePresence",
+      I: UpdatePresenceRequest,
+      O: UpdatePresenceResponse,
       kind: MethodKind.Unary,
     },
     /**
-     * Sets or replaces the current user's custom status. Emoji and text are
+     * Updates or replaces the current user's custom status. Emoji and text are
      * required, and expires_at must be omitted or in the future.
      *
-     * @generated from rpc chatto.api.v1.AccountService.SetCustomStatus
+     * @generated from rpc chatto.api.v1.MyAccountService.UpdateCustomStatus
      */
-    setCustomStatus: {
-      name: "SetCustomStatus",
-      I: SetCustomStatusRequest,
-      O: SetCustomStatusResponse,
+    updateCustomStatus: {
+      name: "UpdateCustomStatus",
+      I: UpdateCustomStatusRequest,
+      O: UpdateCustomStatusResponse,
       kind: MethodKind.Unary,
     },
     /**
-     * Clears the current user's custom status. The call is idempotent and returns
+     * Deletes the current user's custom status. The call is idempotent and returns
      * the resulting empty status state.
      *
-     * @generated from rpc chatto.api.v1.AccountService.ClearCustomStatus
+     * @generated from rpc chatto.api.v1.MyAccountService.DeleteCustomStatus
      */
-    clearCustomStatus: {
-      name: "ClearCustomStatus",
-      I: ClearCustomStatusRequest,
-      O: ClearCustomStatusResponse,
+    deleteCustomStatus: {
+      name: "DeleteCustomStatus",
+      I: DeleteCustomStatusRequest,
+      O: DeleteCustomStatusResponse,
       kind: MethodKind.Unary,
     },
     /**
      * Issues a short-lived token used to confirm self-deletion.
      *
-     * @generated from rpc chatto.api.v1.AccountService.RequestAccountDeletion
+     * @generated from rpc chatto.api.v1.MyAccountService.RequestAccountDeletion
      */
     requestAccountDeletion: {
       name: "RequestAccountDeletion",
@@ -123,7 +171,7 @@ export const AccountService = {
     /**
      * Permanently deletes the authenticated account after token validation.
      *
-     * @generated from rpc chatto.api.v1.AccountService.DeleteMyAccount
+     * @generated from rpc chatto.api.v1.MyAccountService.DeleteMyAccount
      */
     deleteMyAccount: {
       name: "DeleteMyAccount",

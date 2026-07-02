@@ -8,12 +8,15 @@ import {
   NotificationItemKind,
   type NotificationAPI,
   type NotificationPage
-} from '@chatto/api-client/notifications';
+} from '$lib/api-client/notifications';
 
 type MockNotificationAPI = NotificationAPI & {
   listNotifications: ReturnType<typeof vi.fn>;
+  getNotification: ReturnType<typeof vi.fn>;
+  batchGetNotifications: ReturnType<typeof vi.fn>;
   listRoomNotifications: ReturnType<typeof vi.fn>;
   hasNotifications: ReturnType<typeof vi.fn>;
+  listRoomNotificationCounts: ReturnType<typeof vi.fn>;
   listNotificationCounts: ReturnType<typeof vi.fn>;
   dismissNotification: ReturnType<typeof vi.fn>;
   dismissAllNotifications: ReturnType<typeof vi.fn>;
@@ -43,11 +46,14 @@ function makeAPI(
       if (options.notificationsError) throw options.notificationsError;
       return options.notifications ?? page([]);
     }),
+    getNotification: vi.fn().mockResolvedValue(null),
+    batchGetNotifications: vi.fn().mockResolvedValue({ items: [], serverName: null }),
     listRoomNotifications: vi.fn().mockImplementation(async () => {
       if (options.roomNotificationsError) throw options.roomNotificationsError;
       return options.roomNotifications ?? page([]);
     }),
     hasNotifications: vi.fn().mockResolvedValue(false),
+    listRoomNotificationCounts: vi.fn().mockResolvedValue({}),
     listNotificationCounts: vi.fn().mockResolvedValue({}),
     dismissNotification: vi
       .fn()

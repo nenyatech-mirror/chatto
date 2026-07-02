@@ -1,11 +1,11 @@
 import { Code, ConnectError } from '@connectrpc/connect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureApiClientHooks } from '@chatto/api-client/hooks';
+import { configureApiClientHooks } from '$lib/api-client/hooks';
 import {
   createExternalIdentityAPI,
   createExternalIdentityFlowAPI
-} from '@chatto/api-client/externalIdentities';
-import { ExternalIdentityFlowKind } from '@chatto/api-types/api/v1/external_identities_pb';
+} from '$lib/api-client/externalIdentities';
+import { ExternalIdentityFlowKind } from '@chatto/api-types/chatto/auth/v1/external_identity_auth_pb';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),

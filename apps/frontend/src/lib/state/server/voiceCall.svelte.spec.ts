@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { VoiceCallAPI } from '@chatto/api-client/voiceCalls';
+import type { VoiceCallAPI } from '$lib/api-client/voiceCalls';
 
 const { soundMocks } = vi.hoisted(() => ({
   soundMocks: {
@@ -179,7 +179,9 @@ vi.mock('livekit-client/e2ee-worker?worker', () => ({
 
 function createVoiceCallClient(overrides: Partial<VoiceCallAPI> = {}): VoiceCallAPI {
   return {
-    listActiveCallRoomIds: vi.fn(async () => []),
+    listActiveCalls: vi.fn(async () => []),
+    getActiveCall: vi.fn(async () => null),
+    batchGetActiveCalls: vi.fn(async () => []),
     listCallParticipants: vi.fn(async () => []),
     joinCall: vi.fn(async () => true),
     getCallToken: vi.fn(async () => ({

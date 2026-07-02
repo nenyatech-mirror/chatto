@@ -10,9 +10,13 @@
  * Also includes the local user's active call from VoiceCallState for instant feedback.
  */
 
-import { SvelteMap } from 'svelte/reactivity';
+import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 import type { VoiceCallState } from '$lib/state/server/voiceCall.svelte';
-import type { VoiceCallAPI, VoiceCallParticipant } from '@chatto/api-client/voiceCalls';
+import type {
+  ActiveVoiceCall,
+  VoiceCallAPI,
+  VoiceCallParticipant
+} from '$lib/api-client/voiceCalls';
 
 /** Participant info for display in the room list sidebar. */
 export type CallRoomParticipant = {
@@ -90,21 +94,33 @@ export class ActiveCallRoomsState {
   }
 
   /**
-   * Load active call room IDs and their participants from the server.
+   * Load active call snapshots from the server.
    * Should be called when entering the chat (alongside room list loading).
    */
   async load(): Promise<void> {
-    const roomIds = await this.#api.listActiveCallRoomIds();
+    const calls = await this.#api.listActiveCalls();
+    const activeRoomIds = new SvelteSet(calls.map((call) => call.roomId));
 
     // Remove rooms that are no longer active
     for (const id of this.serverRooms.keys()) {
-      if (!roomIds.includes(id)) {
+      if (!activeRoomIds.has(id)) {
         this.serverRooms.delete(id);
       }
     }
 
-    // Fetch participants for each active room in parallel
-    await Promise.all(roomIds.map((roomId: string) => this.loadRoomParticipants(roomId)));
+    for (const call of calls) {
+      this.applyActiveCall(call);
+    }
+  }
+
+  private applyActiveCall(call: ActiveVoiceCall): void {
+    this.serverRooms.set(call.roomId, {
+      callId: call.callId,
+      participants: call.participants.map(toCallRoomParticipant)
+    });
+    if (this.pendingCallIds.get(call.roomId) === call.callId) {
+      this.pendingCallIds.delete(call.roomId);
+    }
   }
 
   private bumpRoomVersion(roomId: string): number {

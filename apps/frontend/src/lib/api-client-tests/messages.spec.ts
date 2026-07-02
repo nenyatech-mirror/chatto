@@ -1,11 +1,12 @@
 import { Timestamp } from '@bufbuild/protobuf';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureApiClientHooks } from '@chatto/api-client/hooks';
-import { createMessageAPI } from '@chatto/api-client/messages';
+import { configureApiClientHooks } from '$lib/api-client/hooks';
+import { createMessageAPI } from '$lib/api-client/messages';
 import {
   MentionConfirmationChallenge,
-  PostMessageResponse
+  CreateMessageResponse,
+  UpdateMessageResponse
 } from '@chatto/api-types/api/v1/messages_pb';
 import {
   RoomTimelineEvent,
@@ -18,12 +19,11 @@ const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createConnectTransport: vi.fn(),
   handleAuthenticationRequired: vi.fn(),
-  postMessage: vi.fn(),
+  createMessage: vi.fn(),
   updateMessage: vi.fn(),
   deleteMessage: vi.fn(),
   deleteAttachment: vi.fn(),
-  deleteLinkPreview: vi.fn(),
-  sendTypingIndicator: vi.fn()
+  deleteLinkPreview: vi.fn()
 }));
 
 vi.mock('@connectrpc/connect', async (importOriginal) => {
@@ -45,26 +45,24 @@ describe('createMessageAPI', () => {
     mocks.handleAuthenticationRequired.mockReset();
 
     configureApiClientHooks({ onAuthenticationRequired: mocks.handleAuthenticationRequired });
-    mocks.postMessage.mockReset();
+    mocks.createMessage.mockReset();
     mocks.updateMessage.mockReset();
     mocks.deleteMessage.mockReset();
     mocks.deleteAttachment.mockReset();
     mocks.deleteLinkPreview.mockReset();
-    mocks.sendTypingIndicator.mockReset();
     mocks.createConnectTransport.mockReturnValue({ kind: 'transport' });
     mocks.createClient.mockReturnValue({
-      postMessage: mocks.postMessage,
+      createMessage: mocks.createMessage,
       updateMessage: mocks.updateMessage,
       deleteMessage: mocks.deleteMessage,
       deleteAttachment: mocks.deleteAttachment,
-      deleteLinkPreview: mocks.deleteLinkPreview,
-      sendTypingIndicator: mocks.sendTypingIndicator
+      deleteLinkPreview: mocks.deleteLinkPreview
     });
   });
 
   it('posts a message with bearer auth and maps the renderable event response', async () => {
-    mocks.postMessage.mockResolvedValue(
-      new PostMessageResponse({
+    mocks.createMessage.mockResolvedValue(
+      new CreateMessageResponse({
         result: {
           case: 'event',
           value: new RoomTimelineEvent({
@@ -99,7 +97,7 @@ describe('createMessageAPI', () => {
       bearerToken: 'remote-token'
     });
 
-    const result = await api.postMessage({
+    const result = await api.createMessage({
       roomId: 'room-1',
       body: 'hello',
       threadRootEventId: 'root-1',
@@ -121,7 +119,7 @@ describe('createMessageAPI', () => {
       baseUrl: 'https://remote.example.test/api/connect',
       useBinaryFormat: true
     });
-    expect(mocks.postMessage).toHaveBeenCalledWith(
+    expect(mocks.createMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         roomId: 'room-1',
         body: 'hello',
@@ -149,8 +147,8 @@ describe('createMessageAPI', () => {
   });
 
   it('returns large mention confirmation challenges without treating them as errors', async () => {
-    mocks.postMessage.mockResolvedValue(
-      new PostMessageResponse({
+    mocks.createMessage.mockResolvedValue(
+      new CreateMessageResponse({
         result: {
           case: 'mentionConfirmation',
           value: new MentionConfirmationChallenge({
@@ -166,17 +164,17 @@ describe('createMessageAPI', () => {
       bearerToken: null
     });
 
-    await expect(api.postMessage({ roomId: 'room-1', body: '@all hello' })).resolves.toEqual({
+    await expect(api.createMessage({ roomId: 'room-1', body: '@all hello' })).resolves.toEqual({
       kind: 'mentionConfirmation',
       recipientCount: 12,
       token: 'confirm-token'
     });
-    expect(mocks.postMessage).toHaveBeenCalledWith(expect.anything(), { headers: undefined });
+    expect(mocks.createMessage).toHaveBeenCalledWith(expect.anything(), { headers: undefined });
   });
 
   it('maps browser files to protobuf attachment uploads', async () => {
-    mocks.postMessage.mockResolvedValue(
-      new PostMessageResponse({
+    mocks.createMessage.mockResolvedValue(
+      new CreateMessageResponse({
         result: {
           case: 'event',
           value: new RoomTimelineEvent({
@@ -200,13 +198,13 @@ describe('createMessageAPI', () => {
       bearerToken: null
     });
 
-    await api.postMessage({
+    await api.createMessage({
       roomId: 'room-1',
       body: 'with file',
       attachments: [file]
     });
 
-    const request = mocks.postMessage.mock.calls[0][0];
+    const request = mocks.createMessage.mock.calls[0][0];
     expect(request.attachments).toHaveLength(1);
     expect(request.attachments[0]).toMatchObject({
       filename: 'note.txt',
@@ -217,7 +215,7 @@ describe('createMessageAPI', () => {
 
   it('marks the server authentication stale on unauthenticated Connect errors', async () => {
     const err = new ConnectError('authentication required', Code.Unauthenticated);
-    mocks.postMessage.mockRejectedValue(err);
+    mocks.createMessage.mockRejectedValue(err);
 
     const api = createMessageAPI({
       serverId: 'remote',
@@ -225,12 +223,37 @@ describe('createMessageAPI', () => {
       bearerToken: 'expired-token'
     });
 
-    await expect(api.postMessage({ roomId: 'room-1', body: 'hello' })).rejects.toBe(err);
+    await expect(api.createMessage({ roomId: 'room-1', body: 'hello' })).rejects.toBe(err);
     expect(mocks.handleAuthenticationRequired).toHaveBeenCalledWith('remote');
   });
 
   it('updates a message through MessageService', async () => {
-    mocks.updateMessage.mockResolvedValue({ updated: true });
+    mocks.updateMessage.mockResolvedValue(
+      new UpdateMessageResponse({
+        updated: true,
+        event: new RoomTimelineEvent({
+          id: 'event-1',
+          actorId: 'user-1',
+          createdAt: Timestamp.fromDate(new Date('2026-06-20T10:00:00Z')),
+          event: {
+            case: 'messagePosted',
+            value: new RoomTimelineMessagePosted({
+              roomId: 'room-1',
+              body: 'edited'
+            })
+          }
+        }),
+        includes: new RoomTimelineIncludes({
+          users: {
+            'user-1': new User({
+              id: 'user-1',
+              login: 'alice',
+              displayName: 'Alice'
+            })
+          }
+        })
+      })
+    );
 
     const api = createMessageAPI({
       baseUrl: 'https://remote.example.test/api/connect',
@@ -244,7 +267,14 @@ describe('createMessageAPI', () => {
         body: 'edited',
         alsoSendToChannel: false
       })
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({
+      updated: true,
+      event: {
+        id: 'event-1',
+        actor: { id: 'user-1', displayName: 'Alice' },
+        event: { kind: 'messagePosted', body: 'edited' }
+      }
+    });
 
     expect(mocks.updateMessage).toHaveBeenCalledWith(
       {
@@ -254,6 +284,32 @@ describe('createMessageAPI', () => {
         alsoSendToChannel: false
       },
       { headers: { Authorization: 'Bearer remote-token' } }
+    );
+  });
+
+  it('can patch message echo state without sending a body', async () => {
+    mocks.updateMessage.mockResolvedValue(new UpdateMessageResponse({ updated: true }));
+
+    const api = createMessageAPI({
+      baseUrl: 'https://remote.example.test/api/connect',
+      bearerToken: null
+    });
+
+    await expect(
+      api.updateMessage({
+        roomId: 'room-1',
+        eventId: 'event-1',
+        alsoSendToChannel: true
+      })
+    ).resolves.toEqual({ updated: true, event: null });
+
+    expect(mocks.updateMessage).toHaveBeenCalledWith(
+      {
+        roomId: 'room-1',
+        eventId: 'event-1',
+        alsoSendToChannel: true
+      },
+      { headers: undefined }
     );
   });
 
@@ -287,19 +343,4 @@ describe('createMessageAPI', () => {
     );
   });
 
-  it('sends typing indicators through MessageService', async () => {
-    mocks.sendTypingIndicator.mockResolvedValue({ sent: true });
-
-    const api = createMessageAPI({
-      baseUrl: 'https://remote.example.test/api/connect',
-      bearerToken: 'remote-token'
-    });
-
-    await expect(api.sendTypingIndicator('room-1', 'thread-root-1')).resolves.toBe(true);
-
-    expect(mocks.sendTypingIndicator).toHaveBeenCalledWith(
-      { roomId: 'room-1', threadRootEventId: 'thread-root-1' },
-      { headers: { Authorization: 'Bearer remote-token' } }
-    );
-  });
 });

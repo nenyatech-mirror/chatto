@@ -1,10 +1,10 @@
 ---
 title: MessageService
-description: Message posting, editing, deletion, link-preview, attachment, and typing RPCs.
+description: Message creation, editing, deletion, permalink, reaction, link-preview, and attachment RPCs.
 editUrl: false
 ---
 
-{/* Generated from proto/chatto/{api,admin,realtime}/v1/*.proto. Do not edit directly. */}
+{/* Generated from proto/chatto/{auth,discovery,api,admin,realtime}/v1/*.proto. Do not edit directly. */}
 
 Chatto exposes this service below `/api/connect`.
 
@@ -18,51 +18,51 @@ Shared message and enum definitions are documented in [Shared Types And Enums](/
 
 ## MessageService
 
-Posts messages into room and thread timelines.
+Creates messages in room and thread timelines.
 
-<a id="chatto-api-v1-MessageService-PostMessage"></a>
+<a id="chatto-api-v1-MessageService-CreateMessage"></a>
 
-### PostMessage
+### CreateMessage
 
-Posts a message for the current user. The user must be a room member and
+Creates a message for the current user. The user must be a room member and
 must have message.post for room messages or message.post-in-thread for
 thread replies. Echoing a thread reply also requires message.echo and
 message.post.
 
 ```http
-POST /api/connect/chatto.api.v1.MessageService/PostMessage
+POST /api/connect/chatto.api.v1.MessageService/CreateMessage
 ```
 
-<a id="chatto-api-v1-PostMessageRequest"></a>
+<a id="chatto-api-v1-CreateMessageRequest"></a>
 
-#### Input: PostMessageRequest
+#### Input: CreateMessageRequest
 
-Request to post a message in a room or thread.
+Request to create a message in a room or thread.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `room_id` | `string` | Required. Room where the message should be posted. |
+| `room_id` | `string` | Required. Room where the message should be created. |
 | `body` | `string` | Message body text. Required unless attachments or attachment_asset_ids is non-empty. |
 | `attachment_asset_ids` | `repeated string` | Existing room-scoped attachment asset IDs to include with the message. |
 | `thread_root_event_id` | `string` | Event ID of the thread root message when posting a thread reply. |
 | `in_reply_to` | `string` | Event ID this message replies to for attribution. |
 | `also_send_to_channel` | `bool` | True to also echo a thread reply into the main room timeline. |
 | `mention_confirmation_token` | `string` | Short-lived token returned by a prior mention confirmation challenge. |
-| `link_preview` | [`LinkPreview`](/reference/connectrpc-api/types/#chatto-api-v1-LinkPreview) | Link preview selected by the client. Server response-only LinkPreview fields are ignored. |
+| `link_preview` | [`MessageLinkPreviewInput`](/reference/connectrpc-api/types/#chatto-api-v1-MessageLinkPreviewInput) | Link preview selected by the client. |
 | `attachments` | repeated [`MessageAttachmentUpload`](/reference/connectrpc-api/types/#chatto-api-v1-MessageAttachmentUpload) | Browser-uploaded attachments to include with the message. |
 
 
-<a id="chatto-api-v1-PostMessageResponse"></a>
+<a id="chatto-api-v1-CreateMessageResponse"></a>
 
-#### Result: PostMessageResponse
+#### Result: CreateMessageResponse
 
-Result of posting a message.
+Result of creating a message.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `result.event` | [`RoomTimelineEvent`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineEvent) | Renderable timeline event for the posted message. |
+| `result.event` | [`RoomTimelineEvent`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineEvent) | Renderable timeline event for the created message. |
 | `result.mention_confirmation` | [`MentionConfirmationChallenge`](/reference/connectrpc-api/types/#chatto-api-v1-MentionConfirmationChallenge) | Challenge shown when a message would notify many people. |
-| `includes` | [`RoomTimelineIncludes`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineIncludes) | Related entities needed to render event when a message was posted. |
+| `includes` | [`RoomTimelineIncludes`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineIncludes) | Related entities needed to render event when a message was created. |
 
 
 <a id="chatto-api-v1-MessageService-UpdateMessage"></a>
@@ -81,13 +81,13 @@ POST /api/connect/chatto.api.v1.MessageService/UpdateMessage
 
 #### Input: UpdateMessageRequest
 
-Request to edit a message body.
+Request to patch a message.
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `room_id` | `string` | Required. Room containing the message. |
 | `event_id` | `string` | Required. Event ID of the message to edit. |
-| `body` | `string` | New message body text. |
+| `body` | `optional string` | New message body text. Omit to preserve the current body. |
 | `also_send_to_channel` | `optional bool` | For thread replies, whether a channel echo should exist after saving. Omit to preserve the current echo state. |
 
 
@@ -100,6 +100,8 @@ Result of editing a message.
 | Field | Type | Description |
 | --- | --- | --- |
 | `updated` | `bool` | True when the edit was accepted. |
+| `event` | [`RoomTimelineEvent`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineEvent) | Renderable timeline event after the edit. |
+| `includes` | [`RoomTimelineIncludes`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineIncludes) | Related entities needed to render event after the edit. |
 
 
 <a id="chatto-api-v1-MessageService-DeleteMessage"></a>
@@ -204,35 +206,191 @@ Result of removing a link preview from a message.
 | `deleted` | `bool` | True when the link preview removal was accepted. |
 
 
-<a id="chatto-api-v1-MessageService-SendTypingIndicator"></a>
+<a id="chatto-api-v1-MessageService-RefreshMessageAttachmentUrls"></a>
 
-### SendTypingIndicator
+### RefreshMessageAttachmentUrls
 
-Publishes a live-only typing indicator. Room membership is required; message
-posting permission is not.
+Refreshes signed URLs for the current attachments on one message.
+Authentication and room membership are required. Returns NOT_FOUND when the
+message does not exist, is not a current visible message, or belongs to a
+different room. Returns an empty attachment list when the message exists
+but currently has no attachments.
 
 ```http
-POST /api/connect/chatto.api.v1.MessageService/SendTypingIndicator
+POST /api/connect/chatto.api.v1.MessageService/RefreshMessageAttachmentUrls
 ```
 
-<a id="chatto-api-v1-SendTypingIndicatorRequest"></a>
+<a id="chatto-api-v1-RefreshMessageAttachmentUrlsRequest"></a>
 
-#### Input: SendTypingIndicatorRequest
+#### Input: RefreshMessageAttachmentUrlsRequest
 
-Request to publish a live-only typing indicator.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `room_id` | `string` | Required. Room where the current user is typing. |
-| `thread_root_event_id` | `string` | Event ID of the thread root when typing inside a thread. |
-
-
-<a id="chatto-api-v1-SendTypingIndicatorResponse"></a>
-
-#### Result: SendTypingIndicatorResponse
-
-Result of publishing a typing indicator.
+Request to refresh signed attachment URLs for one message.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `sent` | `bool` | True when the typing indicator was accepted for publish. |
+| `room_id` | `string` | Required room ID. |
+| `event_id` | `string` | Required message event ID. |
+| `thumbnail` | [`AttachmentThumbnailOptions`](/reference/connectrpc-api/types/#chatto-api-v1-AttachmentThumbnailOptions) | Thumbnail URL options. Defaults are applied when absent. |
+
+
+<a id="chatto-api-v1-RefreshMessageAttachmentUrlsResponse"></a>
+
+#### Result: RefreshMessageAttachmentUrlsResponse
+
+Response containing fresh signed URLs for the current message attachments.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `attachments` | repeated [`RefreshedAttachmentUrls`](/reference/connectrpc-api/types/#chatto-api-v1-RefreshedAttachmentUrls) | Fresh URL bundle for each current attachment on the message. |
+
+
+<a id="chatto-api-v1-MessageService-BatchRefreshMessageAttachmentUrls"></a>
+
+### BatchRefreshMessageAttachmentUrls
+
+Refreshes signed URLs for the current attachments on multiple messages in
+one room. Authentication and room membership are required. Missing,
+retracted, non-message, and wrong-room event IDs are omitted. Results
+preserve first-seen request order and repeated event IDs are de-duplicated.
+Existing visible messages with no current attachments are returned with an
+empty attachment list.
+
+```http
+POST /api/connect/chatto.api.v1.MessageService/BatchRefreshMessageAttachmentUrls
+```
+
+<a id="chatto-api-v1-BatchRefreshMessageAttachmentUrlsRequest"></a>
+
+#### Input: BatchRefreshMessageAttachmentUrlsRequest
+
+Request to refresh signed attachment URLs for many messages in one room.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `room_id` | `string` | Required room ID. |
+| `event_ids` | `repeated string` | Required message event IDs. Missing, retracted, non-message, and wrong-room event IDs are omitted from the response. |
+| `thumbnail` | [`AttachmentThumbnailOptions`](/reference/connectrpc-api/types/#chatto-api-v1-AttachmentThumbnailOptions) | Thumbnail URL options. Defaults are applied when absent. |
+
+
+<a id="chatto-api-v1-BatchRefreshMessageAttachmentUrlsResponse"></a>
+
+#### Result: BatchRefreshMessageAttachmentUrlsResponse
+
+Response containing fresh signed URLs for many visible messages.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `messages` | repeated [`RefreshedMessageAttachmentUrls`](/reference/connectrpc-api/types/#chatto-api-v1-RefreshedMessageAttachmentUrls) | Refreshed messages in first-seen request order. |
+
+
+<a id="chatto-api-v1-MessageService-ResolveMessageLinkTarget"></a>
+
+### ResolveMessageLinkTarget
+
+Resolves a permalink target to either the room timeline or a message
+thread, including thread-only replies that are not room timeline rows.
+Returns NOT_FOUND when the target message is missing or hidden and
+PERMISSION_DENIED when the room is inaccessible.
+
+```http
+POST /api/connect/chatto.api.v1.MessageService/ResolveMessageLinkTarget
+```
+
+<a id="chatto-api-v1-ResolveMessageLinkTargetRequest"></a>
+
+#### Input: ResolveMessageLinkTargetRequest
+
+Request for resolving a message permalink target.
+
+Unlike GetRoomEventsAround, this can resolve thread-only replies that do not
+appear as rows in the room timeline.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `room_id` | `string` | Required. Room containing the linked event. |
+| `event_id` | `string` | Required. Linked event ID. |
+
+
+<a id="chatto-api-v1-ResolveMessageLinkTargetResponse"></a>
+
+#### Result: ResolveMessageLinkTargetResponse
+
+Response describing where a message permalink should land.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `event` | [`RoomTimelineEvent`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineEvent) | Linked event, hydrated with the same shape used by timeline pages. |
+| `thread_root_event_id` | `string` | Event ID of the thread root when event is a thread-only reply. Empty when the event should open in the room timeline. |
+| `includes` | [`RoomTimelineIncludes`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineIncludes) | Related entities needed to render the event. |
+
+
+<a id="chatto-api-v1-MessageService-AddReaction"></a>
+
+### AddReaction
+
+Adds a reaction to a message. The user must be a room member and have
+message.react in the target room.
+
+```http
+POST /api/connect/chatto.api.v1.MessageService/AddReaction
+```
+
+<a id="chatto-api-v1-AddReactionRequest"></a>
+
+#### Input: AddReactionRequest
+
+Request to add the current user's reaction to a message.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `room_id` | `string` | Required. Room containing the message event. |
+| `message_event_id` | `string` | Required. Event ID of the message being reacted to. |
+| `emoji` | `string` | Required. Emoji shortcode name, such as "thumbsup" or "heart". |
+
+
+<a id="chatto-api-v1-AddReactionResponse"></a>
+
+#### Result: AddReactionResponse
+
+Result of adding a reaction.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `added` | `bool` | True when the reaction was newly added, false when it already existed. |
+| `reaction` | [`RoomTimelineReaction`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineReaction) | Updated aggregate reaction state for this emoji. |
+
+
+<a id="chatto-api-v1-MessageService-RemoveReaction"></a>
+
+### RemoveReaction
+
+Removes a reaction from a message. The user must be a room member and have
+message.react in the target room.
+
+```http
+POST /api/connect/chatto.api.v1.MessageService/RemoveReaction
+```
+
+<a id="chatto-api-v1-RemoveReactionRequest"></a>
+
+#### Input: RemoveReactionRequest
+
+Request to remove the current user's reaction from a message.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `room_id` | `string` | Required. Room containing the message event. |
+| `message_event_id` | `string` | Required. Event ID of the message whose reaction should be removed. |
+| `emoji` | `string` | Required. Emoji shortcode name, such as "thumbsup" or "heart". |
+
+
+<a id="chatto-api-v1-RemoveReactionResponse"></a>
+
+#### Result: RemoveReactionResponse
+
+Result of removing a reaction.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `removed` | `bool` | True when the reaction was removed, false when it did not exist. |
+| `reaction` | [`RoomTimelineReaction`](/reference/connectrpc-api/types/#chatto-api-v1-RoomTimelineReaction) | Updated aggregate reaction state for this emoji. Empty when no reactions for the emoji remain. |

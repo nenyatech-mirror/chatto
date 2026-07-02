@@ -18,19 +18,19 @@ type messageService struct {
 	api *API
 }
 
-func (s *messageService) PostMessage(ctx context.Context, req *connect.Request[apiv1.PostMessageRequest]) (*connect.Response[apiv1.PostMessageResponse], error) {
+func (s *messageService) CreateMessage(ctx context.Context, req *connect.Request[apiv1.CreateMessageRequest]) (*connect.Response[apiv1.CreateMessageResponse], error) {
 	caller, err := requireCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	attachmentAssetIDs, videoProcessingAssetIDs, challenge, err := s.uploadPostAttachments(ctx, caller.UserID, req.Msg)
+	attachmentAssetIDs, videoProcessingAssetIDs, challenge, err := s.uploadCreateMessageAttachments(ctx, caller.UserID, req.Msg)
 	if err != nil {
 		return nil, connectError(err)
 	}
 	if challenge != nil {
-		return connect.NewResponse(&apiv1.PostMessageResponse{
-			Result: &apiv1.PostMessageResponse_MentionConfirmation{
+		return connect.NewResponse(&apiv1.CreateMessageResponse{
+			Result: &apiv1.CreateMessageResponse_MentionConfirmation{
 				MentionConfirmation: &apiv1.MentionConfirmationChallenge{
 					RecipientCount: int32(challenge.RecipientCount),
 					Token:          challenge.Token,
@@ -55,11 +55,11 @@ func (s *messageService) PostMessage(ctx context.Context, req *connect.Request[a
 		return nil, connectError(err)
 	}
 	if result == nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("message post returned no result"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("message create returned no result"))
 	}
 	if challenge := result.MentionConfirmation; challenge != nil {
-		return connect.NewResponse(&apiv1.PostMessageResponse{
-			Result: &apiv1.PostMessageResponse_MentionConfirmation{
+		return connect.NewResponse(&apiv1.CreateMessageResponse{
+			Result: &apiv1.CreateMessageResponse_MentionConfirmation{
 				MentionConfirmation: &apiv1.MentionConfirmationChallenge{
 					RecipientCount: int32(challenge.RecipientCount),
 					Token:          challenge.Token,
@@ -68,7 +68,7 @@ func (s *messageService) PostMessage(ctx context.Context, req *connect.Request[a
 		}), nil
 	}
 	if result.Event == nil {
-		return nil, connect.NewError(connect.CodeInternal, errors.New("message post returned no event"))
+		return nil, connect.NewError(connect.CodeInternal, errors.New("message create returned no event"))
 	}
 
 	roomID := result.Event.GetMessagePosted().GetRoomId()
@@ -80,13 +80,13 @@ func (s *messageService) PostMessage(ctx context.Context, req *connect.Request[a
 	if err != nil {
 		return nil, connectError(err)
 	}
-	return connect.NewResponse(&apiv1.PostMessageResponse{
-		Result:   &apiv1.PostMessageResponse_Event{Event: apiEvent},
+	return connect.NewResponse(&apiv1.CreateMessageResponse{
+		Result:   &apiv1.CreateMessageResponse_Event{Event: apiEvent},
 		Includes: includes,
 	}), nil
 }
 
-func (s *messageService) uploadPostAttachments(ctx context.Context, actorID string, req *apiv1.PostMessageRequest) ([]string, []string, *core.MentionConfirmationChallenge, error) {
+func (s *messageService) uploadCreateMessageAttachments(ctx context.Context, actorID string, req *apiv1.CreateMessageRequest) ([]string, []string, *core.MentionConfirmationChallenge, error) {
 	attachmentAssetIDs := append([]string(nil), req.GetAttachmentAssetIds()...)
 	if len(req.GetAttachments()) == 0 {
 		return attachmentAssetIDs, nil, nil, nil
@@ -151,16 +151,25 @@ func (s *messageService) UpdateMessage(ctx context.Context, req *connect.Request
 		return nil, err
 	}
 
-	if err := s.api.core.Messages().UpdateMessage(ctx, core.MessageUpdateInput{
+	event, kind, err := s.api.core.Messages().UpdateMessage(ctx, core.MessageUpdateInput{
 		ActorID:           caller.UserID,
 		RoomID:            req.Msg.RoomId,
 		EventID:           req.Msg.EventId,
 		Body:              req.Msg.Body,
 		AlsoSendToChannel: req.Msg.AlsoSendToChannel,
-	}); err != nil {
+	})
+	if err != nil {
 		return nil, connectError(err)
 	}
-	return connect.NewResponse(&apiv1.UpdateMessageResponse{Updated: true}), nil
+	apiEvent, includes, err := newRoomTimelineAssembler(s.api).hydrateEvent(ctx, caller.UserID, kind, event)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	return connect.NewResponse(&apiv1.UpdateMessageResponse{
+		Updated:  true,
+		Event:    apiEvent,
+		Includes: includes,
+	}), nil
 }
 
 func (s *messageService) DeleteMessage(ctx context.Context, req *connect.Request[apiv1.DeleteMessageRequest]) (*connect.Response[apiv1.DeleteMessageResponse], error) {
@@ -213,26 +222,6 @@ func (s *messageService) DeleteLinkPreview(ctx context.Context, req *connect.Req
 	return connect.NewResponse(&apiv1.DeleteLinkPreviewResponse{Deleted: true}), nil
 }
 
-func (s *messageService) SendTypingIndicator(ctx context.Context, req *connect.Request[apiv1.SendTypingIndicatorRequest]) (*connect.Response[apiv1.SendTypingIndicatorResponse], error) {
-	caller, err := requireCaller(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var threadRootEventID *string
-	if req.Msg.ThreadRootEventId != "" {
-		threadRootEventID = &req.Msg.ThreadRootEventId
-	}
-	if err := s.api.core.Messages().SendTypingIndicator(ctx, core.TypingIndicatorInput{
-		ActorID:           caller.UserID,
-		RoomID:            req.Msg.RoomId,
-		ThreadRootEventID: threadRootEventID,
-	}); err != nil {
-		return nil, connectError(err)
-	}
-	return connect.NewResponse(&apiv1.SendTypingIndicatorResponse{Sent: true}), nil
-}
-
 func (s *messageService) hydratePostedEvent(ctx context.Context, viewerID string, kind core.RoomKind, event *corev1.Event) (*apiv1.RoomTimelineEvent, *apiv1.RoomTimelineIncludes, error) {
 	reactionsByMessageID, err := s.api.core.GetReactionsBatch(ctx, []string{event.Id})
 	if err != nil {
@@ -257,7 +246,7 @@ func (s *messageService) hydratePostedEvent(ctx context.Context, viewerID string
 	return apiEvent, &apiv1.RoomTimelineIncludes{Users: users}, nil
 }
 
-func apiMessageLinkPreviewToCore(input *apiv1.LinkPreview) *corev1.LinkPreview {
+func apiMessageLinkPreviewToCore(input *apiv1.MessageLinkPreviewInput) *corev1.LinkPreview {
 	if input == nil {
 		return nil
 	}

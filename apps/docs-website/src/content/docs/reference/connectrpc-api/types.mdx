@@ -4,7 +4,7 @@ description: Generated shared message and enum reference for Chatto ConnectRPC s
 editUrl: false
 ---
 
-{/* Generated from proto/chatto/{api,admin,realtime}/v1/*.proto. Do not edit directly. */}
+{/* Generated from proto/chatto/{auth,discovery,api,admin,realtime}/v1/*.proto. Do not edit directly. */}
 
 Shared message and enum definitions used by the ConnectRPC service pages.
 
@@ -14,41 +14,53 @@ Shared message and enum definitions used by the ConnectRPC service pages.
 
 
 
-<a id="chatto-api-v1-CapabilityGrant"></a>
+<a id="chatto-auth-v1-PendingExternalIdentity"></a>
 
-### CapabilityGrant
+### PendingExternalIdentity
 
-Effective decision for one capability key.
-
-Built-in keys currently include:
-- admin.view
-- dm.start
-- admin.view-users
-- user.manage-accounts
-- role.assign
-- role.view
-- role.manage
-- admin.view-system
-- admin.view-audit
-- user.manage-permissions
-
-Clients should ignore unknown keys so servers can add capabilities over time.
+Metadata about a pending external identity flow. The provider subject is not
+exposed; clients only need user-facing provider/profile hints.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `capability` | `string` | Stable capability key, such as "admin.view" or "dm.start". |
-| `granted` | `bool` | Whether the capability is currently available. |
+| `kind` | [`ExternalIdentityFlowKind`](#chatto-auth-v1-ExternalIdentityFlowKind) | Pending flow kind. |
+| `provider_id` | `string` | Provider ID that produced the identity. |
+| `provider_type` | `string` | Provider type that produced the identity. |
+| `provider_label` | `string` | Provider label shown to the user. |
+| `verified_email` | `string` | Verified email supplied by the provider, when available. |
+| `login_hint` | `string` | Suggested username derived from provider profile hints. |
+| `display_name_hint` | `string` | Suggested display name derived from provider profile hints. |
+| `bound_user_id` | `string` | User ID this link flow is bound to. Empty for create flows. |
+| `redirect_path` | `string` | Internal path the client should return to after confirmation. |
 
-<a id="chatto-api-v1-PermissionGrant"></a>
+<a id="chatto-api-v1-ExternalIdentityProvider"></a>
 
-### PermissionGrant
+### ExternalIdentityProvider
 
-Effective decision for one permission key.
+Public metadata for a configured external login provider.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `permission` | `string` | Stable permission key, such as "server.manage". |
-| `granted` | `bool` | Whether the permission is currently granted. |
+| `id` | `string` | Stable configured provider ID. |
+| `type` | `string` | Provider type, such as "oidc", "github", or "discord". |
+| `label` | `string` | Human-readable label. |
+| `login_url` | `string` | URL that starts login for this provider. |
+| `link_url` | `string` | URL that starts authenticated account linking for this provider. Clients should use StartExternalIdentityLink instead of navigating here directly. |
+| `linked` | `bool` | True when this provider is already linked to the authenticated user. |
+| `linked_identity_subject_hash` | `string` | Linked identity subject hash for this provider, when linked. |
+
+<a id="chatto-api-v1-LinkedExternalIdentity"></a>
+
+### LinkedExternalIdentity
+
+Linked provider identity metadata for the authenticated user's settings UI.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `provider_id` | `string` | Provider ID recorded when the identity was linked. |
+| `provider_type` | `string` | Provider type recorded when the identity was linked. |
+| `provider_label` | `string` | Current or fallback provider label. |
+| `subject_hash` | `string` | Stable one-way subject hash, useful only as a UI/list key. |
 
 <a id="chatto-api-v1-CustomUserStatus"></a>
 
@@ -100,6 +112,42 @@ Public user identity fields plus live profile state.
 | `presence_status` | [`PresenceStatus`](#chatto-api-v1-PresenceStatus) | Current live presence status. |
 | `custom_status` | [`CustomUserStatus`](#chatto-api-v1-CustomUserStatus) | Custom profile status, when set. |
 
+<a id="chatto-api-v1-CapabilityGrant"></a>
+
+### CapabilityGrant
+
+Effective decision for one capability key.
+
+Built-in keys currently include:
+- admin.view
+- dm.start
+- admin.view-users
+- user.manage-accounts
+- role.assign
+- role.view
+- role.manage
+- admin.view-system
+- admin.view-audit
+- user.manage-permissions
+
+Clients should ignore unknown keys so servers can add capabilities over time.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `capability` | `string` | Stable capability key, such as "admin.view" or "dm.start". |
+| `granted` | `bool` | Whether the capability is currently available. |
+
+<a id="chatto-api-v1-PermissionGrant"></a>
+
+### PermissionGrant
+
+Effective decision for one permission key.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `permission` | `string` | Stable permission key, such as "server.manage". |
+| `granted` | `bool` | Whether the permission is currently granted. |
+
 <a id="chatto-api-v1-RoomNotificationPreference"></a>
 
 ### RoomNotificationPreference
@@ -122,6 +170,26 @@ Server-wide notification preference for the authenticated user.
 | --- | --- | --- |
 | `level` | [`NotificationLevel`](#chatto-api-v1-NotificationLevel) | Explicit server-level setting. |
 | `effective_level` | [`NotificationLevel`](#chatto-api-v1-NotificationLevel) | Level after applying system defaults. |
+
+<a id="chatto-api-v1-ServerViewerPermissions"></a>
+
+### ServerViewerPermissions
+
+Effective server/channel permission decisions for the authenticated user.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `permissions` | repeated [`PermissionGrant`](#chatto-api-v1-PermissionGrant) | One row per permission known to the server. |
+
+<a id="chatto-api-v1-ServerViewerState"></a>
+
+### ServerViewerState
+
+Non-permission server state for the authenticated user.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `has_unread_rooms` | `bool` | Whether any joined channel room has unread messages. |
 
 <a id="chatto-api-v1-UserSettings"></a>
 
@@ -159,29 +227,6 @@ Current authenticated user's public profile plus self-only settings.
 | `last_login_change` | `google.protobuf.Timestamp` | Last time a login credential changed, when known. |
 | `profile` | [`UserProfile`](#chatto-api-v1-UserProfile) | Public profile and live presence fields for the authenticated user. |
 | `has_password` | `bool` | Whether this account currently has a password sign-in credential. |
-
-<a id="chatto-api-v1-PageInfo"></a>
-
-### PageInfo
-
-Offset-based page metadata returned by list RPCs.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `total_count` | `int64` | Total matching item count before pagination. |
-| `has_more` | `bool` | True when another page exists after this response. |
-
-<a id="chatto-api-v1-PageRequest"></a>
-
-### PageRequest
-
-Offset-based page request for list RPCs whose result order is stable enough
-for simple list browsing.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `limit` | `int32` | Maximum number of items to request. Each RPC defines its default and effective maximum; this shared request shape accepts values up to 500. |
-| `offset` | `int32` | Zero-based number of matching items to skip. |
 
 <a id="chatto-api-v1-LinkPreview"></a>
 
@@ -297,9 +342,10 @@ participants, and follow state without additional per-message requests.
 | `channel_echo_event_id` | `string` | Channel timeline event ID for a thread echo, when applicable. |
 | `reply_count` | `int32` | Number of replies in this message's thread. |
 | `last_reply_at` | `google.protobuf.Timestamp` | Creation time of the most recent reply in this message's thread. |
-| `thread_participant_user_ids` | `repeated string` | User IDs that have participated in this message's thread. |
+| `thread_participant_preview_user_ids` | `repeated string` | Preview of up to five user IDs that have participated in this message's thread. |
 | `viewer_is_following_thread` | `optional bool` | Whether the current user follows this message's thread, when known. |
 | `reactions` | repeated [`RoomTimelineReaction`](#chatto-api-v1-RoomTimelineReaction) | Reaction summaries for this message. |
+| `thread_participant_count` | `int32` | Total number of distinct users that have participated in this message's thread. |
 
 <a id="chatto-api-v1-RoomTimelinePage"></a>
 
@@ -336,7 +382,7 @@ user has reacted with the same emoji.
 | `emoji` | `string` | Emoji or reaction key. |
 | `count` | `int32` | Number of users who reacted with this emoji. |
 | `has_reacted` | `bool` | True when the current user reacted with this emoji. |
-| `user_ids` | `repeated string` | User IDs that reacted with this emoji. |
+| `preview_user_ids` | `repeated string` | Preview of up to five user IDs that reacted with this emoji. |
 
 <a id="chatto-api-v1-RoomTimelineRoomEvent"></a>
 
@@ -422,53 +468,28 @@ One current room attachment and its message anchor.
 | `thread_root_event_id` | `string` | Thread root event ID when the containing message is a thread reply. |
 | `created_at` | `google.protobuf.Timestamp` | Message creation timestamp. |
 
-<a id="chatto-api-v1-ExternalIdentityProvider"></a>
+<a id="chatto-api-v1-PageInfo"></a>
 
-### ExternalIdentityProvider
+### PageInfo
 
-Public metadata for a configured external login provider.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `id` | `string` | Stable configured provider ID. |
-| `type` | `string` | Provider type, such as "oidc", "github", or "discord". |
-| `label` | `string` | Human-readable label. |
-| `login_url` | `string` | URL that starts login for this provider. |
-| `link_url` | `string` | URL that starts authenticated account linking for this provider. Clients should use StartExternalIdentityLink instead of navigating here directly. |
-| `linked` | `bool` | True when this provider is already linked to the authenticated user. |
-| `linked_identity_subject_hash` | `string` | Linked identity subject hash for this provider, when linked. |
-
-<a id="chatto-api-v1-LinkedExternalIdentity"></a>
-
-### LinkedExternalIdentity
-
-Linked provider identity metadata for the authenticated user's settings UI.
+Offset-based page metadata returned by list RPCs.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `provider_id` | `string` | Provider ID recorded when the identity was linked. |
-| `provider_type` | `string` | Provider type recorded when the identity was linked. |
-| `provider_label` | `string` | Current or fallback provider label. |
-| `subject_hash` | `string` | Stable one-way subject hash, useful only as a UI/list key. |
+| `total_count` | `int64` | Total matching item count before pagination. |
+| `has_more` | `bool` | True when another page exists after this response. |
 
-<a id="chatto-api-v1-PendingExternalIdentity"></a>
+<a id="chatto-api-v1-PageRequest"></a>
 
-### PendingExternalIdentity
+### PageRequest
 
-Metadata about a pending external identity flow. The provider subject is not
-exposed; clients only need user-facing provider/profile hints.
+Offset-based page request for list RPCs whose result order is stable enough
+for simple list browsing.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `kind` | [`ExternalIdentityFlowKind`](#chatto-api-v1-ExternalIdentityFlowKind) | Pending flow kind. |
-| `provider_id` | `string` | Provider ID that produced the identity. |
-| `provider_type` | `string` | Provider type that produced the identity. |
-| `provider_label` | `string` | Provider label shown to the user. |
-| `verified_email` | `string` | Verified email supplied by the provider, when available. |
-| `login_hint` | `string` | Suggested username derived from provider profile hints. |
-| `display_name_hint` | `string` | Suggested display name derived from provider profile hints. |
-| `bound_user_id` | `string` | User ID this link flow is bound to. Empty for create flows. |
-| `redirect_path` | `string` | Internal path the client should return to after confirmation. |
+| `limit` | `int32` | Maximum number of items to request. Each RPC defines its default and effective maximum; this shared request shape accepts values up to 500. |
+| `offset` | `int32` | Zero-based number of matching items to skip. |
 
 <a id="chatto-api-v1-DirectoryMember"></a>
 
@@ -507,6 +528,36 @@ committed. The message service validates per-file limits and permissions.
 | `content` | `bytes` | Raw file bytes. |
 | `filename` | `string` | Original filename supplied by the client. |
 | `content_type` | `string` | MIME content type supplied by the client. Empty values are treated as application/octet-stream. |
+
+<a id="chatto-api-v1-MessageLinkPreviewInput"></a>
+
+### MessageLinkPreviewInput
+
+Link preview metadata accepted when creating a message.
+
+This request-only shape intentionally excludes response-only fields such as
+generated image URLs.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `url` | `string` | Previewed URL. |
+| `title` | `optional string` | Page or embed title, when selected by the client. |
+| `description` | `optional string` | Page or embed description, when selected by the client. |
+| `image_asset_id` | `optional string` | Existing server asset ID for the preview image, when selected by the client. |
+| `site_name` | `optional string` | Site name, when known. |
+| `embed_type` | `optional string` | Embed provider or type, when recognized. |
+| `embed_id` | `optional string` | Provider-specific embed ID, when recognized. |
+
+<a id="chatto-api-v1-RefreshedMessageAttachmentUrls"></a>
+
+### RefreshedMessageAttachmentUrls
+
+Fresh signed attachment URLs for one visible message.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `event_id` | `string` | Message event ID these attachment URLs belong to. |
+| `attachments` | repeated [`RefreshedAttachmentUrls`](#chatto-api-v1-RefreshedAttachmentUrls) | Fresh URL bundle for each current attachment on the message. |
 
 <a id="chatto-api-v1-DirectMessageNotification"></a>
 
@@ -665,7 +716,6 @@ Ordered group of channel rooms and sidebar links.
 | `id` | `string` | Stable room group ID. |
 | `name` | `string` | Display name. |
 | `description` | `string` | Public group description, when set. |
-| `rooms` | repeated [`DirectoryRoom`](#chatto-api-v1-DirectoryRoom) | Visible channel rooms in this group order. |
 | `items` | repeated [`RoomGroupItem`](#chatto-api-v1-RoomGroupItem) | Mixed room/sidebar-link entries in sidebar order. |
 
 <a id="chatto-api-v1-RoomGroupItem"></a>
@@ -757,9 +807,9 @@ Public server profile, identity, and branding fields.
 | `welcome_message` | `optional string` | Optional welcome message. |
 | `description` | `optional string` | Optional server description. |
 
-<a id="chatto-api-v1-ServerMemberProfile"></a>
+<a id="chatto-api-v1-ServerProfile"></a>
 
-### ServerMemberProfile
+### ServerProfile
 
 Server profile fields visible to authenticated members.
 
@@ -785,26 +835,6 @@ Authenticated server runtime settings used by clients.
 | `max_video_upload_size` | `int64` | Maximum video upload size in bytes. |
 | `message_edit_window_seconds` | `int32` | Message edit window in seconds. |
 
-<a id="chatto-api-v1-ServerViewerPermissions"></a>
-
-### ServerViewerPermissions
-
-Effective server/channel permission decisions for the authenticated user.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `permissions` | repeated [`PermissionGrant`](#chatto-api-v1-PermissionGrant) | One row per permission known to the server. |
-
-<a id="chatto-api-v1-ServerViewerState"></a>
-
-### ServerViewerState
-
-Non-permission server state for the authenticated user.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `has_unread_rooms` | `bool` | Whether any joined channel room has unread messages. |
-
 <a id="chatto-api-v1-FollowedThread"></a>
 
 ### FollowedThread
@@ -820,6 +850,30 @@ One followed thread for the current user.
 | `reply_count` | `int32` | Number of replies in the thread. |
 | `last_reply_at` | `google.protobuf.Timestamp` | Creation time of the latest reply, when the thread has replies. |
 | `has_unread` | `bool` | True when the current user has unread replies in the thread. |
+
+<a id="chatto-api-v1-ThreadFollowState"></a>
+
+### ThreadFollowState
+
+Current follow state for one thread and viewer.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `room_id` | `string` | Room containing the thread. |
+| `thread_root_event_id` | `string` | Event ID of the root message for the thread. |
+| `following` | `bool` | True when the current user follows the thread. |
+
+<a id="chatto-api-v1-ActiveCall"></a>
+
+### ActiveCall
+
+Current active call snapshot for one room.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `room_id` | `string` | Room containing the active call. |
+| `call_id` | `string` | Active call session ID. |
+| `participants` | repeated [`CallParticipant`](#chatto-api-v1-CallParticipant) | Participants currently projected for this call. |
 
 <a id="chatto-api-v1-CallParticipant"></a>
 
@@ -1074,6 +1128,18 @@ Operator compatibility role reference used by operator.v1 response shapes.
 | `name` | `string` | Stable role name. |
 | `display_name` | `string` | Display name shown in operator UI. |
 
+<a id="chatto-admin-v1-PermissionDecisionUpdate"></a>
+
+### PermissionDecisionUpdate
+
+Stored permission decision returned after a write.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `permission` | `string` | Permission identifier. |
+| `scope` | [`PermissionScope`](#chatto-admin-v1-PermissionScope) | Server, group, or room scope this decision applies to. |
+| `decision` | [`PermissionDecision`](#chatto-admin-v1-PermissionDecision) | Stored decision after the write. NONE means no explicit decision remains. |
+
 <a id="chatto-admin-v1-PermissionExplanation"></a>
 
 ### PermissionExplanation
@@ -1220,14 +1286,13 @@ Permission matrix for one user across all scopes.
 
 ### AdminRoomLayoutGroup
 
-Ordered room group used by authenticated clients and the admin layout editor.
+Ordered room group returned after admin layout mutations.
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `id` | `string` | Stable room group ID. |
 | `name` | `string` | Display name. |
 | `description` | `string` | Public group description, when set. |
-| `rooms` | `repeated chatto.api.v1.Room` | Channel rooms in this group order. |
 | `items` | repeated [`AdminRoomLayoutItem`](#chatto-admin-v1-AdminRoomLayoutItem) | Mixed room/sidebar-link entries in sidebar order. |
 
 <a id="chatto-admin-v1-AdminRoomLayoutItem"></a>
@@ -1252,25 +1317,36 @@ One item reference in a sidebar order replacement.
 | `kind` | [`AdminRoomLayoutItemKind`](#chatto-admin-v1-AdminRoomLayoutItemKind) | Item kind. |
 | `id` | `string` | Room ID when kind is ROOM, sidebar link ID when kind is SIDEBAR_LINK. |
 
+<a id="chatto-admin-v1-ServerConfig"></a>
+
+### ServerConfig
+
+Runtime-editable server profile settings.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `server_name` | `string` | Server name for page titles. Empty means the default is used. |
+| `description` | `string` | Short server description for OG link-preview metadata. |
+| `motd` | `string` | Message of the day for the authenticated header. |
+| `welcome_message` | `string` | Welcome message shown on the login page. |
+
 
 
 ## Enums
 
 
 
-<a id="chatto-api-v1-NotificationLevel"></a>
+<a id="chatto-auth-v1-ExternalIdentityFlowKind"></a>
 
-### NotificationLevel
+### ExternalIdentityFlowKind
 
-Notification delivery level for a room.
+Mode of a pending external identity confirmation flow.
 
 | Name | Number | Description |
 | --- | --- | --- |
-| `NOTIFICATION_LEVEL_UNSPECIFIED` | `0` | The level was not specified. |
-| `NOTIFICATION_LEVEL_DEFAULT` | `1` | Use the inherited default for the room. |
-| `NOTIFICATION_LEVEL_MUTED` | `2` | Do not notify for this room. |
-| `NOTIFICATION_LEVEL_NORMAL` | `3` | Notify according to the normal room rules. |
-| `NOTIFICATION_LEVEL_ALL_MESSAGES` | `4` | Notify for every message in the room. |
+| `EXTERNAL_IDENTITY_FLOW_KIND_UNSPECIFIED` | `0` | The flow kind was not specified. |
+| `EXTERNAL_IDENTITY_FLOW_KIND_CREATE_ACCOUNT` | `1` | Create a new passwordless account and link the provider identity. |
+| `EXTERNAL_IDENTITY_FLOW_KIND_LINK_ACCOUNT` | `2` | Link the provider identity to the authenticated account. |
 
 <a id="chatto-api-v1-PresenceStatus"></a>
 
@@ -1278,9 +1354,9 @@ Notification delivery level for a room.
 
 Live presence status returned by public read APIs.
 
-Offline is a read-side state only. Clients cannot report Offline through the
-account presence RPC; they should stop reporting presence and let the
-server's live presence record expire.
+Offline is a read-side state only. Clients cannot update their presence to
+Offline through the account presence RPC; they should stop refreshing and let
+the server's live presence record expire.
 
 | Name | Number | Description |
 | --- | --- | --- |
@@ -1301,6 +1377,20 @@ Fit mode used when generating transformed user avatar URLs.
 | `USER_AVATAR_FIT_MODE_UNSPECIFIED` | `0` | The fit mode was not specified. |
 | `USER_AVATAR_FIT_MODE_CONTAIN` | `1` | Preserve the whole source image within the requested bounds. |
 | `USER_AVATAR_FIT_MODE_COVER` | `2` | Fill the requested bounds, cropping when needed. |
+
+<a id="chatto-api-v1-NotificationLevel"></a>
+
+### NotificationLevel
+
+Notification delivery level for a room.
+
+| Name | Number | Description |
+| --- | --- | --- |
+| `NOTIFICATION_LEVEL_UNSPECIFIED` | `0` | The level was not specified. |
+| `NOTIFICATION_LEVEL_DEFAULT` | `1` | Use the inherited default for the room. |
+| `NOTIFICATION_LEVEL_MUTED` | `2` | Do not notify for this room. |
+| `NOTIFICATION_LEVEL_NORMAL` | `3` | Notify according to the normal room rules. |
+| `NOTIFICATION_LEVEL_ALL_MESSAGES` | `4` | Notify for every message in the room. |
 
 <a id="chatto-api-v1-TimeFormat"></a>
 
@@ -1339,18 +1429,6 @@ Fit mode used when generating transformed attachment thumbnails.
 | `ATTACHMENT_FIT_MODE_UNSPECIFIED` | `0` | The fit mode was not specified. |
 | `ATTACHMENT_FIT_MODE_CONTAIN` | `1` | Preserve the whole source image within the requested bounds. |
 | `ATTACHMENT_FIT_MODE_COVER` | `2` | Fill the requested bounds, cropping when needed. |
-
-<a id="chatto-api-v1-ExternalIdentityFlowKind"></a>
-
-### ExternalIdentityFlowKind
-
-Mode of a pending external identity confirmation flow.
-
-| Name | Number | Description |
-| --- | --- | --- |
-| `EXTERNAL_IDENTITY_FLOW_KIND_UNSPECIFIED` | `0` | The flow kind was not specified. |
-| `EXTERNAL_IDENTITY_FLOW_KIND_CREATE_ACCOUNT` | `1` | Create a new passwordless account and link the provider identity. |
-| `EXTERNAL_IDENTITY_FLOW_KIND_LINK_ACCOUNT` | `2` | Link the provider identity to the authenticated account. |
 
 <a id="chatto-api-v1-RoomKind"></a>
 

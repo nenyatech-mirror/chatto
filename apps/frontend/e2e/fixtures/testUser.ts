@@ -1,6 +1,13 @@
 import { expect, type Page } from '@playwright/test';
 import { csrfHeaders } from './csrf';
-import { connectPost, type E2EAdminRole, unwrapAdminRole } from './connectHelpers';
+import {
+  connectPost,
+  expectPermissionDecisionUpdate,
+  type E2EAdminRole,
+  type E2EPermissionDecision,
+  type E2EPermissionDecisionUpdateResponse,
+  unwrapAdminRole
+} from './connectHelpers';
 import { unloadPageForIdentitySwitch } from './navigation';
 
 export interface TestUser {
@@ -34,10 +41,6 @@ interface ServerStateResponse {
   };
 }
 
-interface PermissionMutationResponse {
-  ok?: boolean;
-}
-
 interface AssignRoleResponse {
   assigned?: boolean;
 }
@@ -50,20 +53,20 @@ async function setServerRolePermission(
   page: Page,
   roleName: string,
   permission: string,
-  decision: 'PERMISSION_DECISION_ALLOW' | 'PERMISSION_DECISION_DENY' | 'PERMISSION_DECISION_NONE'
+  decision: E2EPermissionDecision
 ): Promise<void> {
-  const data = await connectPost<PermissionMutationResponse>(
+  const data = await connectPost<E2EPermissionDecisionUpdateResponse>(
     page,
     'chatto.admin.v1.AdminPermissionService/SetRolePermission',
     { roleName, permission, decision }
   );
-  expect(data.ok).toBe(true);
+  expectPermissionDecisionUpdate(data, { permission, decision });
 }
 
 async function assignRoleViaConnect(page: Page, userId: string, roleName: string): Promise<void> {
   const data = await connectPost<AssignRoleResponse>(
     page,
-    'chatto.admin.v1.AdminMemberService/AssignRole',
+    'chatto.admin.v1.AdminUserService/AssignRole',
     { userId, roleName }
   );
   expect(data.assigned).toBe(true);
@@ -72,7 +75,7 @@ async function assignRoleViaConnect(page: Page, userId: string, roleName: string
 async function revokeRoleViaConnect(page: Page, userId: string, roleName: string): Promise<void> {
   const data = await connectPost<RevokeRoleResponse>(
     page,
-    'chatto.admin.v1.AdminMemberService/RevokeRole',
+    'chatto.admin.v1.AdminUserService/RevokeRole',
     { userId, roleName }
   );
   expect(data.revoked).toBe(true);

@@ -91,7 +91,7 @@ func (s *roomService) UnarchiveRoom(ctx context.Context, req *connect.Request[ap
 	return connect.NewResponse(&apiv1.UnarchiveRoomResponse{Room: apiRoom(room)}), nil
 }
 
-func (s *roomService) SetRoomUniversal(ctx context.Context, req *connect.Request[apiv1.SetRoomUniversalRequest]) (*connect.Response[apiv1.SetRoomUniversalResponse], error) {
+func (s *roomService) UpdateRoomUniversal(ctx context.Context, req *connect.Request[apiv1.UpdateRoomUniversalRequest]) (*connect.Response[apiv1.UpdateRoomUniversalResponse], error) {
 	caller, err := requireCaller(ctx)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (s *roomService) SetRoomUniversal(ctx context.Context, req *connect.Request
 	if err != nil {
 		return nil, connectError(err)
 	}
-	return connect.NewResponse(&apiv1.SetRoomUniversalResponse{Room: apiRoom(room)}), nil
+	return connect.NewResponse(&apiv1.UpdateRoomUniversalResponse{Room: apiRoom(room)}), nil
 }
 
 func (s *roomService) JoinRoom(ctx context.Context, req *connect.Request[apiv1.JoinRoomRequest]) (*connect.Response[apiv1.JoinRoomResponse], error) {
@@ -190,10 +190,9 @@ func (s *roomService) ListRoomBans(ctx context.Context, req *connect.Request[api
 	limit, offset := apiPagination(req.Msg.GetPage(), defaultRoomBanListLimit, maxRoomBanListLimit)
 	page, totalCount, hasMore := apiSlicePage(bans, limit, offset)
 
-	directory := memberDirectoryService{api: s.api}
 	out := make([]*apiv1.RoomBan, 0, len(page))
 	for _, ban := range page {
-		apiBan, err := s.apiRoomBan(ctx, directory, ban)
+		apiBan, err := s.apiRoomBan(ctx, ban)
 		if err != nil {
 			return nil, err
 		}
@@ -203,6 +202,26 @@ func (s *roomService) ListRoomBans(ctx context.Context, req *connect.Request[api
 		Bans: out,
 		Page: apiPageInfo(totalCount, hasMore),
 	}), nil
+}
+
+func (s *roomService) UpdateTypingIndicator(ctx context.Context, req *connect.Request[apiv1.UpdateTypingIndicatorRequest]) (*connect.Response[apiv1.UpdateTypingIndicatorResponse], error) {
+	caller, err := requireCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var threadRootEventID *string
+	if req.Msg.ThreadRootEventId != "" {
+		threadRootEventID = &req.Msg.ThreadRootEventId
+	}
+	if err := s.api.core.Messages().SendTypingIndicator(ctx, core.TypingIndicatorInput{
+		ActorID:           caller.UserID,
+		RoomID:            req.Msg.RoomId,
+		ThreadRootEventID: threadRootEventID,
+	}); err != nil {
+		return nil, connectError(err)
+	}
+	return connect.NewResponse(&apiv1.UpdateTypingIndicatorResponse{Updated: true}), nil
 }
 
 func (s *roomService) BanRoomMember(ctx context.Context, req *connect.Request[apiv1.BanRoomMemberRequest]) (*connect.Response[apiv1.BanRoomMemberResponse], error) {
@@ -244,7 +263,7 @@ func (s *roomService) UnbanRoomMember(ctx context.Context, req *connect.Request[
 	return connect.NewResponse(&apiv1.UnbanRoomMemberResponse{Unbanned: true}), nil
 }
 
-func (s *roomService) apiRoomBan(ctx context.Context, directory memberDirectoryService, ban core.RoomBan) (*apiv1.RoomBan, error) {
+func (s *roomService) apiRoomBan(ctx context.Context, ban core.RoomBan) (*apiv1.RoomBan, error) {
 	var expiresAt *timestamppb.Timestamp
 	if ban.ExpiresAt != nil {
 		expiresAt = timestamppb.New(*ban.ExpiresAt)
@@ -274,7 +293,7 @@ func (s *roomService) apiRoomBan(ctx context.Context, directory memberDirectoryS
 			return nil, connectError(err)
 		}
 	} else {
-		apiUser, err := directory.directoryMember(ctx, user, nil)
+		apiUser, err := directoryMember(ctx, s.api, user, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -287,7 +306,7 @@ func (s *roomService) apiRoomBan(ctx context.Context, directory memberDirectoryS
 			return nil, connectError(err)
 		}
 	} else {
-		apiModerator, err := directory.directoryMember(ctx, moderator, nil)
+		apiModerator, err := directoryMember(ctx, s.api, moderator, nil)
 		if err != nil {
 			return nil, err
 		}

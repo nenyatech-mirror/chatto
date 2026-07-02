@@ -73,8 +73,8 @@ message ListMembersResponse {
   reserved 3, 4;
   reserved "total_count", "has_more";
 
-  // Matching users.
-  repeated AdminMember users = 1;
+  // Matching members.
+  repeated AdminMember members = 1;
   // Public roles for display-name lookup.
   repeated chatto.api.v1.Role roles = 2;
   // Page metadata.
@@ -83,10 +83,12 @@ message ListMembersResponse {
 
 // Request one server-admin member detail record.
 message GetMemberRequest {
-  // Target user ID.
-  string user_id = 1;
-  // Target login. Provide either user_id or login.
-  string login = 2;
+  oneof target {
+    // Target stable user ID.
+    string user_id = 1 [(buf.validate.field).string.min_len = 1];
+    // Target login identifier.
+    string login = 2 [(buf.validate.field).string.min_len = 1];
+  }
 }
 
 // Server-admin member detail payload.
@@ -103,6 +105,27 @@ message GetMemberResponse {
   bool viewer_can_manage_roles = 5;
   // Whether the caller may edit direct user permissions.
   bool viewer_can_manage_user_permissions = 6;
+}
+
+// Request server-admin member rows for a set of stable user IDs.
+message BatchGetMembersRequest {
+  // Required target user IDs. Unknown IDs are omitted from the response.
+  repeated string user_ids = 1 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 100
+    items: {
+      string: {min_len: 1}
+    }
+  }];
+}
+
+// Batch server-admin member response.
+message BatchGetMembersResponse {
+  // Found members. The server preserves first-seen request order and
+  // de-duplicates repeated IDs.
+  repeated AdminMember members = 1;
+  // Public roles for display-name lookup.
+  repeated chatto.api.v1.Role roles = 2;
 }
 
 // Request to assign a role to a user.
@@ -141,10 +164,15 @@ message RevokeRoleResponse {
 message UpdateUserRequest {
   // Target user ID.
   string user_id = 1 [(buf.validate.field).string.min_len = 1];
-  // New display name, when changing it.
-  optional string display_name = 2;
-  // New login identifier, when changing it.
-  optional string login = 3;
+  // New display name, when changing it. Empty clears the explicit display
+  // name. The server also rejects control and confusing invisible characters.
+  optional string display_name = 2 [(buf.validate.field).string.max_len = 32];
+  // New login identifier, when changing it. The server accepts ASCII letters,
+  // digits, period, underscore, and hyphen, starting with a letter or digit.
+  optional string login = 3 [(buf.validate.field).string = {
+    min_len: 2
+    max_len: 32
+  }];
 }
 
 // Result of an admin user update.
@@ -155,19 +183,22 @@ message UpdateUserResponse {
   AdminMember member = 2;
 }
 
-// Request to set a user's password as a server-admin action.
-message SetUserPasswordRequest {
+// Request to update a user's password as a server-admin action.
+message UpdateUserPasswordRequest {
   // Target user ID.
   string user_id = 1 [(buf.validate.field).string.min_len = 1];
   // New password. The server applies the same password policy as registration
   // and password reset.
-  string password = 2;
+  string password = 2 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
 }
 
 // Result of an admin password update.
-message SetUserPasswordResponse {
-  // True when the request completed.
-  bool updated = 1;
+message UpdateUserPasswordResponse {
+  // Updated admin member row.
+  AdminMember member = 1;
 }
 
 // Request to clear a user's self-service username-change cooldown.
@@ -197,14 +228,16 @@ message DeleteUserResponse {
   bool deleted = 1;
 }
 
-// Server-admin user identity and cooldown commands.
-service AdminMemberService {
+// Server-admin user management commands and member-detail reads.
+service AdminUserService {
   // Lists server members for the admin members screen. Requires
   // admin.view-users.
   rpc ListMembers(ListMembersRequest) returns (ListMembersResponse);
   // Gets one server member plus role/permission metadata for admin details.
   // Requires admin.view-users. Returns NOT_FOUND when the user does not exist.
   rpc GetMember(GetMemberRequest) returns (GetMemberResponse);
+  // Gets server member rows for multiple users. Requires admin.view-users.
+  rpc BatchGetMembers(BatchGetMembersRequest) returns (BatchGetMembersResponse);
   // Assigns a role to a user. Requires role.assign.
   rpc AssignRole(AssignRoleRequest) returns (AssignRoleResponse);
   // Revokes a role from a user. Requires role.assign.
@@ -212,10 +245,10 @@ service AdminMemberService {
   // Updates another user's login and/or display name as an admin action.
   // Requires user.manage-accounts; the caller cannot target their own account.
   rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
-  // Sets another user's password as an admin action. Requires
+  // Updates another user's password as an admin action. Requires
   // user.manage-accounts and a fresh credential for the caller; the caller
   // cannot target their own account.
-  rpc SetUserPassword(SetUserPasswordRequest) returns (SetUserPasswordResponse);
+  rpc UpdateUserPassword(UpdateUserPasswordRequest) returns (UpdateUserPasswordResponse);
   // Clears the target user's self-service username-change cooldown. Requires
   // user.manage-accounts.
   rpc ClearUsernameCooldown(ClearUsernameCooldownRequest) returns (ClearUsernameCooldownResponse);

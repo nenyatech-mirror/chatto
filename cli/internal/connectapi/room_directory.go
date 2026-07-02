@@ -35,13 +35,15 @@ func (s *roomDirectoryService) ListRooms(ctx context.Context, req *connect.Reque
 	return connect.NewResponse(&apiv1.ListRoomsResponse{Rooms: apiRooms}), nil
 }
 
-func (s *roomDirectoryService) ListRoomGroups(ctx context.Context, _ *connect.Request[apiv1.ListRoomGroupsRequest]) (*connect.Response[apiv1.ListRoomGroupsResponse], error) {
+func (s *roomDirectoryService) ListRoomGroups(ctx context.Context, req *connect.Request[apiv1.ListRoomGroupsRequest]) (*connect.Response[apiv1.ListRoomGroupsResponse], error) {
 	caller, err := requireCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	groups, err := s.api.core.RoomDirectoryReads().ListRoomGroups(ctx, caller.UserID)
+	groups, err := s.api.core.RoomDirectoryReads().ListRoomGroups(ctx, caller.UserID, core.RoomDirectoryGroupOptions{
+		IncludeArchivedRooms: req.Msg.GetIncludeArchivedRooms(),
+	})
 	if err != nil {
 		return nil, connectError(err)
 	}
@@ -51,6 +53,41 @@ func (s *roomDirectoryService) ListRoomGroups(ctx context.Context, _ *connect.Re
 		apiGroups = append(apiGroups, apiRoomGroup(group))
 	}
 	return connect.NewResponse(&apiv1.ListRoomGroupsResponse{Groups: apiGroups}), nil
+}
+
+func (s *roomDirectoryService) GetRoomGroup(ctx context.Context, req *connect.Request[apiv1.GetRoomGroupRequest]) (*connect.Response[apiv1.GetRoomGroupResponse], error) {
+	caller, err := requireCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	group, err := s.api.core.RoomDirectoryReads().GetRoomGroup(ctx, caller.UserID, req.Msg.GetGroupId(), core.RoomDirectoryGroupOptions{
+		IncludeArchivedRooms: req.Msg.GetIncludeArchivedRooms(),
+	})
+	if err != nil {
+		return nil, connectError(err)
+	}
+	return connect.NewResponse(&apiv1.GetRoomGroupResponse{Group: apiRoomGroup(group)}), nil
+}
+
+func (s *roomDirectoryService) BatchGetRoomGroups(ctx context.Context, req *connect.Request[apiv1.BatchGetRoomGroupsRequest]) (*connect.Response[apiv1.BatchGetRoomGroupsResponse], error) {
+	caller, err := requireCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	groups, err := s.api.core.RoomDirectoryReads().BatchGetRoomGroups(ctx, caller.UserID, req.Msg.GetGroupIds(), core.RoomDirectoryGroupOptions{
+		IncludeArchivedRooms: req.Msg.GetIncludeArchivedRooms(),
+	})
+	if err != nil {
+		return nil, connectError(err)
+	}
+
+	apiGroups := make([]*apiv1.RoomGroup, 0, len(groups))
+	for _, group := range groups {
+		apiGroups = append(apiGroups, apiRoomGroup(group))
+	}
+	return connect.NewResponse(&apiv1.BatchGetRoomGroupsResponse{Groups: apiGroups}), nil
 }
 
 func (s *roomDirectoryService) GetRoom(ctx context.Context, req *connect.Request[apiv1.GetRoomRequest]) (*connect.Response[apiv1.GetRoomResponse], error) {
@@ -64,6 +101,24 @@ func (s *roomDirectoryService) GetRoom(ctx context.Context, req *connect.Request
 		return nil, connectError(err)
 	}
 	return connect.NewResponse(&apiv1.GetRoomResponse{Room: apiDirectoryRoom(room)}), nil
+}
+
+func (s *roomDirectoryService) BatchGetRooms(ctx context.Context, req *connect.Request[apiv1.BatchGetRoomsRequest]) (*connect.Response[apiv1.BatchGetRoomsResponse], error) {
+	caller, err := requireCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rooms, err := s.api.core.RoomDirectoryReads().BatchGetRooms(ctx, caller.UserID, req.Msg.GetRoomIds())
+	if err != nil {
+		return nil, connectError(err)
+	}
+
+	apiRooms := make([]*apiv1.DirectoryRoom, 0, len(rooms))
+	for _, room := range rooms {
+		apiRooms = append(apiRooms, apiDirectoryRoom(room))
+	}
+	return connect.NewResponse(&apiv1.BatchGetRoomsResponse{Rooms: apiRooms}), nil
 }
 
 func apiDirectoryRoom(room *core.DirectoryRoom) *apiv1.DirectoryRoom {
@@ -101,9 +156,6 @@ func apiRoomGroup(group *core.DirectoryRoomGroup) *apiv1.RoomGroup {
 		Id:          group.Group.GetId(),
 		Name:        group.Group.GetName(),
 		Description: group.Group.GetDescription(),
-	}
-	for _, room := range group.Rooms {
-		apiGroup.Rooms = append(apiGroup.Rooms, apiDirectoryRoom(room))
 	}
 	for _, item := range group.Items {
 		switch {

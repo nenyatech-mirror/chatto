@@ -37,12 +37,12 @@ func (s *adminUserManagementService) ListMembers(ctx context.Context, req *conne
 		return nil, connectError(err)
 	}
 	response := &adminv1.ListMembersResponse{
-		Users: make([]*adminv1.AdminMember, 0, len(members.Users)),
-		Roles: make([]*apiv1.Role, 0, len(members.Roles)),
-		Page:  apiPageInfo(members.TotalCount, members.HasMore),
+		Members: make([]*adminv1.AdminMember, 0, len(members.Users)),
+		Roles:   make([]*apiv1.Role, 0, len(members.Roles)),
+		Page:    apiPageInfo(members.TotalCount, members.HasMore),
 	}
 	for _, user := range members.Users {
-		response.Users = append(response.Users, s.adminMember(ctx, user))
+		response.Members = append(response.Members, s.adminMember(ctx, user))
 	}
 	for _, role := range members.Roles {
 		response.Roles = append(response.Roles, publicAPIRoleFromAdminMemberSummary(role))
@@ -55,17 +55,25 @@ func (s *adminUserManagementService) GetMember(ctx context.Context, req *connect
 	if err != nil {
 		return nil, err
 	}
-	userID := strings.TrimSpace(req.Msg.GetUserId())
-	login := strings.TrimSpace(req.Msg.GetLogin())
-	if (userID == "") == (login == "") {
-		return nil, invalidArgument("provide exactly one of user_id or login")
-	}
-	if login != "" {
+	var userID string
+	switch target := req.Msg.GetTarget().(type) {
+	case *adminv1.GetMemberRequest_UserId:
+		userID = strings.TrimSpace(target.UserId)
+		if userID == "" {
+			return nil, invalidArgument("user_id is required")
+		}
+	case *adminv1.GetMemberRequest_Login:
+		login := strings.TrimSpace(target.Login)
+		if login == "" {
+			return nil, invalidArgument("login is required")
+		}
 		user, err := s.api.core.GetUserByLogin(ctx, login)
 		if err != nil {
 			return nil, connectError(err)
 		}
 		userID = user.GetId()
+	default:
+		return nil, invalidArgument("provide exactly one of user_id or login")
 	}
 	details, err := s.api.core.GetAdminMemberDetails(ctx, caller.UserID, userID)
 	if err != nil {
@@ -78,6 +86,29 @@ func (s *adminUserManagementService) GetMember(ctx context.Context, req *connect
 		ViewerCanAssignRoles:           details.ViewerCanAssignRoles,
 		ViewerCanManageRoles:           details.ViewerCanManageRoles,
 		ViewerCanManageUserPermissions: details.ViewerCanManageUserPermissions,
+	}
+	return connect.NewResponse(response), nil
+}
+
+func (s *adminUserManagementService) BatchGetMembers(ctx context.Context, req *connect.Request[adminv1.BatchGetMembersRequest]) (*connect.Response[adminv1.BatchGetMembersResponse], error) {
+	caller, err := requireCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	members, err := s.api.core.BatchGetAdminMembers(ctx, caller.UserID, req.Msg.GetUserIds())
+	if err != nil {
+		return nil, connectError(err)
+	}
+	response := &adminv1.BatchGetMembersResponse{
+		Members: make([]*adminv1.AdminMember, 0, len(members.Users)),
+		Roles:   make([]*apiv1.Role, 0, len(members.Roles)),
+	}
+	for _, user := range members.Users {
+		response.Members = append(response.Members, s.adminMember(ctx, user))
+	}
+	for _, role := range members.Roles {
+		response.Roles = append(response.Roles, publicAPIRoleFromAdminMemberSummary(role))
 	}
 	return connect.NewResponse(response), nil
 }
@@ -150,7 +181,7 @@ func (s *adminUserManagementService) UpdateUser(ctx context.Context, req *connec
 	return connect.NewResponse(&adminv1.UpdateUserResponse{User: updatedUser, Member: updatedMember}), nil
 }
 
-func (s *adminUserManagementService) SetUserPassword(ctx context.Context, req *connect.Request[adminv1.SetUserPasswordRequest]) (*connect.Response[adminv1.SetUserPasswordResponse], error) {
+func (s *adminUserManagementService) UpdateUserPassword(ctx context.Context, req *connect.Request[adminv1.UpdateUserPasswordRequest]) (*connect.Response[adminv1.UpdateUserPasswordResponse], error) {
 	caller, err := requireCaller(ctx)
 	if err != nil {
 		return nil, err
@@ -160,6 +191,9 @@ func (s *adminUserManagementService) SetUserPassword(ctx context.Context, req *c
 	}
 	if req.Msg.GetPassword() == "" {
 		return nil, invalidArgument("password is required")
+	}
+	if caller.UserID == req.Msg.GetUserId() {
+		return nil, connectError(core.ErrPermissionDenied)
 	}
 	if caller.UserID != req.Msg.GetUserId() {
 		canManage, err := s.api.core.CanManageUserAccounts(ctx, caller.UserID)
@@ -176,7 +210,11 @@ func (s *adminUserManagementService) SetUserPassword(ctx context.Context, req *c
 	if err := s.api.core.AdminSetUserPasswordAuthorized(ctx, caller.UserID, req.Msg.GetUserId(), req.Msg.GetPassword()); err != nil {
 		return nil, connectError(err)
 	}
-	return connect.NewResponse(&adminv1.SetUserPasswordResponse{Updated: true}), nil
+	member, err := s.adminMemberAfterMutation(ctx, caller.UserID, req.Msg.GetUserId())
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&adminv1.UpdateUserPasswordResponse{Member: member}), nil
 }
 
 func (s *adminUserManagementService) ClearUsernameCooldown(ctx context.Context, req *connect.Request[adminv1.ClearUsernameCooldownRequest]) (*connect.Response[adminv1.ClearUsernameCooldownResponse], error) {

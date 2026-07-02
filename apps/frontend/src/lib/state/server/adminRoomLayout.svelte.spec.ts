@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { flushSync } from 'svelte';
-import type { AdminRoomLayoutAPI } from '@chatto/api-client/adminRoomLayout';
-import type { RoomCommandAPI } from '@chatto/api-client/rooms';
+import type { AdminRoomLayoutAPI } from '$lib/api-client/adminRoomLayout';
+import type { DirectoryRoomGroup, RoomDirectoryAPI } from '$lib/api-client/roomDirectory';
+import type { RoomCommandAPI } from '$lib/api-client/rooms';
 import { RoomEventKind } from '$lib/render/eventKinds';
 import {
   AdminRoomLayoutStore,
@@ -31,8 +32,32 @@ function group(id: string, rooms: AdminRoomInfo[], name = id): AdminRoomGroup {
   };
 }
 
-function queryData(groups: AdminRoomGroup[]) {
-  return groups;
+function queryData(groups: AdminRoomGroup[]): DirectoryRoomGroup[] {
+  return groups.map((group) => ({
+    id: group.id,
+    name: group.name,
+    roomIds: group.rooms.map((room) => room.id),
+    items: group.items.map((item) =>
+      item.kind === 'room'
+        ? {
+            id: item.id,
+            type: 'room' as const,
+            roomId: item.room.id,
+            room: {
+              id: item.room.id,
+              name: item.room.name,
+              description: item.room.description ?? null,
+              kind: 1,
+              archived: item.room.archived,
+              isUniversal: item.room.isUniversal,
+              hasUnread: false,
+              isMember: false,
+              canJoinRoom: false
+            }
+          }
+        : { id: item.id, type: 'link' as const, link: item.link }
+    )
+  }));
 }
 
 type QueuedResult = {
@@ -62,8 +87,10 @@ function makeClient(
   const mutation = vi.fn((_method: string, _input?: unknown) =>
     nextResult(mutations.shift() ?? {})
   );
+  const directory = {
+    listRoomGroups: query
+  } as unknown as Pick<RoomDirectoryAPI, 'listRoomGroups'>;
   const client = {
-    listAdminRoomLayout: query,
     createRoomGroup: vi.fn((input) => mutation('createRoomGroup', input)),
     updateRoomGroup: vi.fn((input) => mutation('updateRoomGroup', input)),
     deleteRoomGroup: vi.fn((groupId) => mutation('deleteRoomGroup', groupId)),
@@ -75,19 +102,19 @@ function makeClient(
     deleteSidebarLink: vi.fn((linkId) => mutation('deleteSidebarLink', linkId)),
     moveSidebarLinkToGroup: vi.fn((input) => mutation('moveSidebarLinkToGroup', input))
   } as unknown as AdminRoomLayoutAPI;
-  return { client, query, mutation };
+  return { client, directory, query, mutation };
 }
 
 function roomAPI(
   overrides: Partial<
-    Pick<RoomCommandAPI, 'updateRoom' | 'archiveRoom' | 'unarchiveRoom' | 'setRoomUniversal'>
+    Pick<RoomCommandAPI, 'updateRoom' | 'archiveRoom' | 'unarchiveRoom' | 'updateRoomUniversal'>
   > = {}
-): Pick<RoomCommandAPI, 'updateRoom' | 'archiveRoom' | 'unarchiveRoom' | 'setRoomUniversal'> {
+): Pick<RoomCommandAPI, 'updateRoom' | 'archiveRoom' | 'unarchiveRoom' | 'updateRoomUniversal'> {
   return {
     updateRoom: vi.fn().mockResolvedValue(null),
     archiveRoom: vi.fn().mockResolvedValue(null),
     unarchiveRoom: vi.fn().mockResolvedValue(null),
-    setRoomUniversal: vi.fn().mockResolvedValue(null),
+    updateRoomUniversal: vi.fn().mockResolvedValue(null),
     ...overrides
   };
 }
@@ -168,10 +195,10 @@ describe('admin room layout diff helpers', () => {
 describe('AdminRoomLayoutStore — loading', () => {
   it('maps server rooms plus roomGroups and preserves archived rooms', async () => {
     const archived = room('r2', { archived: true, description: 'hidden' });
-    const { client } = makeClient({
+    const { client, directory } = makeClient({
       queries: [{ data: queryData([group('g1', [room('r1'), archived], 'Lobby')]) }]
     });
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
 
     expect(store.loading).toBe(false);
     void store.refresh();
@@ -194,11 +221,11 @@ describe('AdminRoomLayoutStore — loading', () => {
     expect(store.loading).toBe(false);
   });
 
-  it('fills item order from rooms when the API does not provide mixed sidebar items', async () => {
-    const { client } = makeClient({
-      queries: [{ data: [{ id: 'g1', name: 'Lobby', rooms: [room('r1')] }] }]
+  it('keeps groups empty when the API does not provide sidebar items', async () => {
+    const { client, directory } = makeClient({
+      queries: [{ data: [{ id: 'g1', name: 'Lobby', roomIds: [], items: [] }] }]
     });
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
 
     await store.refresh();
 
@@ -207,20 +234,20 @@ describe('AdminRoomLayoutStore — loading', () => {
       {
         id: 'g1',
         name: 'Lobby',
-        rooms: [room('r1')],
-        items: [{ id: 'room:r1', kind: 'room', room: room('r1') }]
+        rooms: [],
+        items: []
       }
     ]);
   });
 
   it('keeps known good layout when refresh fails', async () => {
-    const { client } = makeClient({
+    const { client, directory } = makeClient({
       queries: [
         { data: queryData([group('g1', [room('r1')], 'Lobby')]) },
         { error: { message: 'offline' } }
       ]
     });
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
 
     await store.refresh();
     expect(store.groups.map((g) => g.name)).toEqual(['Lobby']);
@@ -231,17 +258,18 @@ describe('AdminRoomLayoutStore — loading', () => {
   });
 
   it('discards stale out-of-order refresh responses', async () => {
-    let resolveFirst!: (value: AdminRoomGroup[]) => void;
-    let resolveSecond!: (value: AdminRoomGroup[]) => void;
-    const listAdminRoomLayout = vi
+    let resolveFirst!: (value: DirectoryRoomGroup[]) => void;
+    let resolveSecond!: (value: DirectoryRoomGroup[]) => void;
+    const listRoomGroups = vi
       .fn()
       .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
       .mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve)));
-    const client = {
-      ...makeClient().client,
-      listAdminRoomLayout
+    const { client, directory } = makeClient();
+    const directoryWithDelayedReads = {
+      ...directory,
+      listRoomGroups
     };
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const store = new AdminRoomLayoutStore(client, directoryWithDelayedReads, roomAPI());
 
     void store.refresh();
     void store.refresh();
@@ -258,14 +286,14 @@ describe('AdminRoomLayoutStore — loading', () => {
 
 describe('AdminRoomLayoutStore — mutations', () => {
   it('creates, renames, and deletes groups optimistically on success', async () => {
-    const { client, mutation } = makeClient({
+    const { client, directory, mutation } = makeClient({
       mutations: [
         { data: { id: 'g2', name: 'Projects', rooms: [], items: [] } },
         { data: { id: 'g2', name: 'Renamed', rooms: [], items: [] } },
         { data: true }
       ]
     });
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
 
     const createResult = await store.createGroup('Projects');
     expect(createResult).toEqual({
@@ -287,8 +315,8 @@ describe('AdminRoomLayoutStore — mutations', () => {
   });
 
   it('does not optimistically update a group when rename fails', async () => {
-    const { client } = makeClient({ mutations: [{ error: { message: 'nope' } }] });
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const { client, directory } = makeClient({ mutations: [{ error: { message: 'nope' } }] });
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
     store.groups = [group('g1', [], 'Original')];
 
     await expect(store.renameGroup('g1', 'Changed')).resolves.toEqual({
@@ -299,11 +327,11 @@ describe('AdminRoomLayoutStore — mutations', () => {
   });
 
   it('updates a room and refreshes for reconciliation', async () => {
-    const { client, query } = makeClient({
+    const { client, directory, query } = makeClient({
       queries: [{ data: queryData([group('g1', [room('r1', { name: 'new-name' })])]) }]
     });
     const api = roomAPI();
-    const store = new AdminRoomLayoutStore(client, api);
+    const store = new AdminRoomLayoutStore(client, directory, api);
 
     await expect(store.updateRoom('r1', 'new-name', 'desc')).resolves.toEqual({ ok: true });
 
@@ -317,14 +345,14 @@ describe('AdminRoomLayoutStore — mutations', () => {
   });
 
   it('archives and unarchives rooms through Connect and refreshes', async () => {
-    const { client, query } = makeClient({
+    const { client, directory, query } = makeClient({
       queries: [
         { data: queryData([group('g1', [room('r1', { archived: true })])]) },
         { data: queryData([group('g1', [room('r1', { archived: false })])]) }
       ]
     });
     const api = roomAPI();
-    const store = new AdminRoomLayoutStore(client, api);
+    const store = new AdminRoomLayoutStore(client, directory, api);
 
     await expect(store.archiveRoom('r1')).resolves.toEqual({ ok: true });
     await expect(store.unarchiveRoom('r1')).resolves.toEqual({ ok: true });
@@ -336,15 +364,15 @@ describe('AdminRoomLayoutStore — mutations', () => {
   });
 
   it('sets room universal state and refreshes for reconciliation', async () => {
-    const { client, query } = makeClient({
+    const { client, directory, query } = makeClient({
       queries: [{ data: queryData([group('g1', [room('r1', { isUniversal: true })])]) }]
     });
     const api = roomAPI();
-    const store = new AdminRoomLayoutStore(client, api);
+    const store = new AdminRoomLayoutStore(client, directory, api);
 
-    await expect(store.setRoomUniversal('r1', true)).resolves.toEqual({ ok: true });
+    await expect(store.updateRoomUniversal('r1', true)).resolves.toEqual({ ok: true });
 
-    expect(api.setRoomUniversal).toHaveBeenCalledWith('r1', true);
+    expect(api.updateRoomUniversal).toHaveBeenCalledWith('r1', true);
     expect(query).toHaveBeenCalledTimes(1);
     expect(store.universalRoomId).toBeNull();
   });
@@ -352,10 +380,10 @@ describe('AdminRoomLayoutStore — mutations', () => {
 
 describe('AdminRoomLayoutStore — drag sequencing', () => {
   it('flushes room move mutations before room reorder mutations', async () => {
-    const { client, mutation } = makeClient({
+    const { client, directory, mutation } = makeClient({
       mutations: [{ data: null }, { data: null }, { data: null }]
     });
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
     const a = room('a');
     const b = room('b');
     const c = room('c');
@@ -381,11 +409,11 @@ describe('AdminRoomLayoutStore — drag sequencing', () => {
   });
 
   it('requests a refresh when a room move or reorder fails', async () => {
-    const { client, query } = makeClient({
+    const { client, directory, query } = makeClient({
       mutations: [{ error: { message: 'move denied' } }, { data: null }, { data: null }],
       queries: [{ data: queryData([group('g1', [room('a')])]) }]
     });
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
     const a = room('a');
     const b = room('b');
     const c = room('c');
@@ -406,8 +434,8 @@ describe('AdminRoomLayoutStore — drag sequencing', () => {
   });
 
   it('does not call reorderRoomGroups when group order is unchanged', async () => {
-    const { client, mutation } = makeClient();
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const { client, directory, mutation } = makeClient();
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
     store.groups = [group('g1', []), group('g2', [])];
 
     store.handleGroupsConsider([group('g1', []), group('g2', [])], 'g1');
@@ -419,10 +447,10 @@ describe('AdminRoomLayoutStore — drag sequencing', () => {
   });
 
   it('calls reorderRoomGroups when group order changes', async () => {
-    const { client, mutation } = makeClient({
+    const { client, directory, mutation } = makeClient({
       mutations: [{ data: [group('g2', []), group('g1', [])] }]
     });
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
     store.groups = [group('g1', []), group('g2', [])];
 
     store.handleGroupsConsider([group('g2', []), group('g1', [])], 'g2');
@@ -437,11 +465,11 @@ describe('AdminRoomLayoutStore — drag sequencing', () => {
 describe('AdminRoomLayoutStore — live events', () => {
   it('suppresses own room-layout echo events but refreshes later events', async () => {
     let now = 1000;
-    const { client, query } = makeClient({
+    const { client, directory, query } = makeClient({
       mutations: [{ data: group('g1', [], 'Lobby') }],
       queries: [{ data: queryData([group('g1', [])]) }]
     });
-    const store = new AdminRoomLayoutStore(client, roomAPI(), () => now);
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI(), () => now);
 
     await store.createGroup('Lobby');
     now = 1500;
@@ -455,7 +483,7 @@ describe('AdminRoomLayoutStore — live events', () => {
   });
 
   it('refreshes on external room metadata/archive events', async () => {
-    const { client, query } = makeClient({
+    const { client, directory, query } = makeClient({
       queries: [
         { data: queryData([group('g1', [room('r1', { name: 'fresh' })])]) },
         { data: queryData([group('g1', [room('r1', { archived: true })])]) },
@@ -463,7 +491,7 @@ describe('AdminRoomLayoutStore — live events', () => {
         { data: queryData([group('g1', [room('r1', { isUniversal: true })])]) }
       ]
     });
-    const store = new AdminRoomLayoutStore(client, roomAPI());
+    const store = new AdminRoomLayoutStore(client, directory, roomAPI());
 
     expect(store.ingestServerEvent(serverEvent(RoomEventKind.RoomUpdated))).toBe(true);
     await settle();

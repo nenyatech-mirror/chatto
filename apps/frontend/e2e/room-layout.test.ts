@@ -8,6 +8,8 @@ import {
   connectPost,
   connectPostResponse,
   createRoomViaConnect,
+  expectPermissionDecisionUpdate,
+  type E2EPermissionDecisionUpdateResponse,
   getDefaultRoomGroupIdViaConnect,
   joinRoomViaConnect
 } from './fixtures/connectHelpers';
@@ -28,20 +30,26 @@ interface RoomGroup {
   roomIds: string[];
 }
 
-interface AdminRoomLayoutRoomResponse {
+interface RoomDirectoryRoomResponse {
   id?: string;
   name?: string;
   archived?: boolean;
 }
 
-interface AdminRoomLayoutGroupResponse {
-  id?: string;
-  name?: string;
-  rooms?: AdminRoomLayoutRoomResponse[];
+interface RoomDirectoryGroupItemResponse {
+  room?: {
+    room?: RoomDirectoryRoomResponse;
+  };
 }
 
-interface AdminRoomLayoutResponse {
-  groups?: AdminRoomLayoutGroupResponse[];
+interface RoomDirectoryGroupResponse {
+  id?: string;
+  name?: string;
+  items?: RoomDirectoryGroupItemResponse[];
+}
+
+interface RoomDirectoryGroupsResponse {
+  groups?: RoomDirectoryGroupResponse[];
 }
 
 async function usePrimaryServerViaAPI(page: Page, _name?: string): Promise<TestServer> {
@@ -63,20 +71,22 @@ async function denyRoomPermissionViaAPI(
   roleName: string,
   permission: string
 ): Promise<void> {
-  const data = await connectPost<{ ok?: boolean }>(
+  const decision = 'PERMISSION_DECISION_DENY';
+  const scope = {
+    kind: 'PERMISSION_SCOPE_KIND_ROOM',
+    id: roomId
+  } as const;
+  const data = await connectPost<E2EPermissionDecisionUpdateResponse>(
     page,
     'chatto.admin.v1.AdminPermissionService/SetRolePermission',
     {
       roleName,
       permission,
-      decision: 'PERMISSION_DECISION_DENY',
-      scope: {
-        kind: 'PERMISSION_SCOPE_KIND_ROOM',
-        id: roomId
-      }
+      decision,
+      scope
     }
   );
-  expect(data.ok).toBe(true);
+  expectPermissionDecisionUpdate(data, { permission, decision, scope });
 }
 
 // updateRoomLayoutViaAPI reshapes the room-group layout to match the
@@ -208,19 +218,26 @@ async function updateRoomLayoutViaAPI(page: Page, groups: RoomGroup[]): Promise<
 async function getRoomLayoutViaAPI(page: Page): Promise<{
   groups: { id: string; name: string; rooms: { id: string; name: string; archived: boolean }[] }[];
 } | null> {
-  const data = await connectPost<AdminRoomLayoutResponse>(
+  const data = await connectPost<RoomDirectoryGroupsResponse>(
     page,
-    'chatto.admin.v1.AdminRoomLayoutService/ListAdminRoomLayout'
+    'chatto.api.v1.RoomDirectoryService/ListRoomGroups',
+    { includeArchivedRooms: true }
   );
   return {
     groups: (data.groups ?? []).map((group) => ({
       id: group.id ?? '',
       name: group.name ?? '',
-      rooms: (group.rooms ?? []).map((room) => ({
-        id: room.id ?? '',
-        name: room.name ?? '',
-        archived: room.archived ?? false
-      }))
+      rooms: (group.items ?? []).flatMap((item) => {
+        const room = item.room?.room;
+        if (!room?.id) return [];
+        return [
+          {
+            id: room.id ?? '',
+            name: room.name ?? '',
+            archived: room.archived ?? false
+          }
+        ];
+      })
     }))
   };
 }

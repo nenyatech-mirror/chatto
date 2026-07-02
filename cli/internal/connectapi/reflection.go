@@ -13,31 +13,31 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"hmans.de/chatto/internal/pb/chatto/admin/v1/adminv1connect"
 	"hmans.de/chatto/internal/pb/chatto/api/v1/apiv1connect"
+	"hmans.de/chatto/internal/pb/chatto/auth/v1/authv1connect"
+	"hmans.de/chatto/internal/pb/chatto/discovery/v1/discoveryv1connect"
 )
 
 var publicReflectionServiceNames = []string{
-	apiv1connect.AccountServiceName,
-	apiv1connect.AttachmentServiceName,
+	authv1connect.ExternalIdentityAuthServiceName,
+	discoveryv1connect.ServerDiscoveryServiceName,
+	apiv1connect.MyAccountServiceName,
 	adminv1connect.AdminDiagnosticsServiceName,
 	adminv1connect.AdminEventLogServiceName,
-	adminv1connect.AdminMemberServiceName,
+	adminv1connect.AdminUserServiceName,
 	adminv1connect.AdminPermissionServiceName,
 	adminv1connect.AdminRoleServiceName,
 	adminv1connect.AdminRoomLayoutServiceName,
 	adminv1connect.AdminServerServiceName,
 	apiv1connect.LinkPreviewServiceName,
-	apiv1connect.MemberDirectoryServiceName,
 	apiv1connect.MessageServiceName,
 	apiv1connect.NotificationPreferencesServiceName,
 	apiv1connect.NotificationServiceName,
 	apiv1connect.PushNotificationServiceName,
-	apiv1connect.ReactionServiceName,
-	apiv1connect.ReadStateServiceName,
 	apiv1connect.RoleServiceName,
 	apiv1connect.RoomDirectoryServiceName,
+	apiv1connect.RoomMemberServiceName,
 	apiv1connect.RoomServiceName,
-	apiv1connect.RoomTimelineServiceName,
-	apiv1connect.ServerDiscoveryServiceName,
+	apiv1connect.ServerMemberServiceName,
 	apiv1connect.ServerServiceName,
 	apiv1connect.ThreadServiceName,
 	apiv1connect.UserDirectoryServiceName,

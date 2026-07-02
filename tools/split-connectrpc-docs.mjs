@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, '..');
 const rawReferencePaths = [
+  path.join(repoRoot, 'apps/docs-website/src/generated/connectrpc-api/auth.raw.mdx'),
+  path.join(repoRoot, 'apps/docs-website/src/generated/connectrpc-api/discovery.raw.mdx'),
   path.join(repoRoot, 'apps/docs-website/src/generated/connectrpc-api/api.raw.mdx'),
   path.join(repoRoot, 'apps/docs-website/src/generated/connectrpc-api/admin.raw.mdx'),
   path.join(repoRoot, 'apps/docs-website/src/generated/connectrpc-api/realtime.raw.mdx')
@@ -20,110 +22,30 @@ const outputDir = path.join(
 
 const categories = [
   {
-    title: 'chatto.api.v1',
+    title: 'chatto.auth.v1',
+    services: [
+      {
+        name: 'ExternalIdentityAuthService',
+        slug: 'external-identity-auth',
+        title: 'External Identity Auth',
+        description: 'Capability-token external identity authentication RPCs.'
+      }
+    ]
+  },
+  {
+    title: 'chatto.discovery.v1',
     services: [
       {
         name: 'ServerDiscoveryService',
         slug: 'server-discovery',
         title: 'Server Discovery',
         description: 'Unauthenticated server metadata, branding, and login discovery RPCs.'
-      },
-      {
-        name: 'ServerService',
-        slug: 'server',
-        title: 'Server',
-        description: 'Authenticated server state and current-user server capability RPCs.'
-      },
-      {
-        name: 'ViewerService',
-        slug: 'viewer',
-        title: 'Viewer',
-        description: 'Authenticated viewer profile, preferences, and capability RPCs.'
-      },
-      {
-        name: 'ExternalIdentityFlowService',
-        slug: 'external-identity-flows',
-        title: 'External Identity Flows',
-        description: 'Public pending external-identity confirmation RPCs.'
-      },
-      {
-        name: 'ExternalIdentityService',
-        slug: 'external-identities',
-        title: 'External Identities',
-        description: 'Authenticated external identity listing, linking, and disconnect RPCs.'
-      },
-      {
-        name: 'AccountService',
-        slug: 'account',
-        title: 'Account',
-        description: 'Self-service account, profile, avatar, presence, status, and settings RPCs.'
-      },
-      {
-        name: 'UserDirectoryService',
-        slug: 'user-directory',
-        title: 'User Directory',
-        description: 'Authenticated public user profile lookup RPCs.'
-      },
-      {
-        name: 'MemberDirectoryService',
-        slug: 'member-directory',
-        title: 'Member Directory',
-        description: 'Server and room member directory RPCs.'
-      },
-      {
-        name: 'RoleService',
-        slug: 'roles',
-        title: 'Roles',
-        description: 'Authenticated role catalog read RPCs.'
-      },
-      {
-        name: 'RoomDirectoryService',
-        slug: 'room-directory',
-        title: 'Room Directory',
-        description: 'Room navigation, room group, and room viewer-state RPCs.'
-      },
-      {
-        name: 'RoomService',
-        slug: 'rooms',
-        title: 'Rooms',
-        description: 'Room lifecycle, membership, direct-message, and moderation RPCs.'
-      },
-      {
-        name: 'RoomTimelineService',
-        slug: 'room-timeline',
-        title: 'Room Timeline',
-        description: 'Room and thread timeline read RPCs.'
-      },
-      {
-        name: 'MessageService',
-        slug: 'messages',
-        title: 'Messages',
-        description: 'Message posting, editing, deletion, link-preview, attachment, and typing RPCs.'
-      },
-      {
-        name: 'AttachmentService',
-        slug: 'attachments',
-        title: 'Attachments',
-        description: 'Attachment listing and signed URL refresh RPCs.'
-      },
-      {
-        name: 'ReactionService',
-        slug: 'reactions',
-        title: 'Reactions',
-        description: 'Message reaction command RPCs.'
-      },
-      {
-        name: 'ReadStateService',
-        slug: 'read-state',
-        title: 'Read State',
-        description: 'Room and thread read-state command RPCs.'
-      },
-      {
-        name: 'ThreadService',
-        slug: 'threads',
-        title: 'Threads',
-        description: 'Thread follow and followed-thread listing RPCs.'
-      },
+      }
+    ]
+  },
+  {
+    title: 'chatto.api.v1',
+    services: [
       {
         name: 'LinkPreviewService',
         slug: 'link-previews',
@@ -131,10 +53,16 @@ const categories = [
         description: 'Link preview fetch RPCs.'
       },
       {
-        name: 'VoiceCallService',
-        slug: 'calls',
-        title: 'Calls',
-        description: 'Voice and video call state and token RPCs.'
+        name: 'MessageService',
+        slug: 'messages',
+        title: 'Messages',
+        description: 'Message creation, editing, deletion, permalink, reaction, link-preview, and attachment RPCs.'
+      },
+      {
+        name: 'MyAccountService',
+        slug: 'account',
+        title: 'My Account',
+        description: 'Self-service account, profile, avatar, presence, status, external identity, and settings RPCs for the authenticated user.'
       },
       {
         name: 'NotificationPreferencesService',
@@ -153,42 +81,72 @@ const categories = [
         slug: 'push-notifications',
         title: 'Push Notifications',
         description: 'Web Push subscription RPCs.'
+      },
+      {
+        name: 'RoleService',
+        slug: 'roles',
+        title: 'Roles',
+        description: 'Authenticated role catalog read RPCs.'
+      },
+      {
+        name: 'RoomDirectoryService',
+        slug: 'room-directory',
+        title: 'Room Directory',
+        description: 'Room navigation, room group, and room viewer-state RPCs.'
+      },
+      {
+        name: 'RoomMemberService',
+        slug: 'room-members',
+        title: 'Room Members',
+        description: 'Room-scoped member directory RPCs.'
+      },
+      {
+        name: 'RoomService',
+        slug: 'rooms',
+        title: 'Rooms',
+        description: 'Room lifecycle, timeline, read-state, membership, direct-message, typing indicator, and moderation RPCs.'
+      },
+      {
+        name: 'ServerMemberService',
+        slug: 'server-members',
+        title: 'Server Members',
+        description: 'Server-scoped member directory RPCs.'
+      },
+      {
+        name: 'ServerService',
+        slug: 'server',
+        title: 'Server',
+        description: 'Authenticated server profile and runtime configuration RPCs.'
+      },
+      {
+        name: 'ThreadService',
+        slug: 'threads',
+        title: 'Threads',
+        description: 'Thread timeline, read-state, follow, and followed-thread listing RPCs.'
+      },
+      {
+        name: 'UserDirectoryService',
+        slug: 'user-directory',
+        title: 'User Directory',
+        description: 'Authenticated public user profile lookup RPCs.'
+      },
+      {
+        name: 'ViewerService',
+        slug: 'viewer',
+        title: 'Viewer',
+        description: 'Authenticated viewer profile, preferences, and capability RPCs.'
+      },
+      {
+        name: 'VoiceCallService',
+        slug: 'calls',
+        title: 'Calls',
+        description: 'Voice and video call state and token RPCs.'
       }
     ]
   },
   {
     title: 'chatto.admin.v1',
     services: [
-      {
-        name: 'AdminServerService',
-        slug: 'admin-server',
-        title: 'Admin Server',
-        description: 'Server profile, branding, and security administration RPCs.'
-      },
-      {
-        name: 'AdminRoomLayoutService',
-        slug: 'admin-room-layout',
-        title: 'Admin Room Layout',
-        description: 'Room group, sidebar layout, and sidebar link administration RPCs.'
-      },
-      {
-        name: 'AdminMemberService',
-        slug: 'admin-members',
-        title: 'Admin Members',
-        description: 'Member identity, role assignment, and username-cooldown RPCs.'
-      },
-      {
-        name: 'AdminRoleService',
-        slug: 'admin-roles',
-        title: 'Admin Roles',
-        description: 'Role catalog and role definition administration RPCs.'
-      },
-      {
-        name: 'AdminPermissionService',
-        slug: 'admin-permissions',
-        title: 'Admin Permissions',
-        description: 'Permission matrix, explanation, and override administration RPCs.'
-      },
       {
         name: 'AdminDiagnosticsService',
         slug: 'admin-diagnostics',
@@ -200,6 +158,36 @@ const categories = [
         slug: 'admin-event-log',
         title: 'Admin Event Log',
         description: 'Audit event log read RPCs.'
+      },
+      {
+        name: 'AdminUserService',
+        slug: 'admin-users',
+        title: 'Admin Users',
+        description: 'User identity, member detail, role assignment, and username-cooldown RPCs.'
+      },
+      {
+        name: 'AdminPermissionService',
+        slug: 'admin-permissions',
+        title: 'Admin Permissions',
+        description: 'Permission matrix, explanation, and override administration RPCs.'
+      },
+      {
+        name: 'AdminRoleService',
+        slug: 'admin-roles',
+        title: 'Admin Roles',
+        description: 'Role catalog and role definition administration RPCs.'
+      },
+      {
+        name: 'AdminRoomLayoutService',
+        slug: 'admin-room-layout',
+        title: 'Admin Room Layout',
+        description: 'Room group, sidebar layout, and sidebar link administration RPCs.'
+      },
+      {
+        name: 'AdminServerService',
+        slug: 'admin-server',
+        title: 'Admin Server',
+        description: 'Server profile, branding, and security administration RPCs.'
       }
     ]
   }
@@ -212,7 +200,7 @@ function frontmatter(title, description) {
 }
 
 function generatedNotice() {
-  return '{/* Generated from proto/chatto/{api,admin,realtime}/v1/*.proto. Do not edit directly. */}\n\n';
+  return '{/* Generated from proto/chatto/{auth,discovery,api,admin,realtime}/v1/*.proto. Do not edit directly. */}\n\n';
 }
 
 function parseAnchoredSections(source, heading) {
@@ -231,15 +219,21 @@ function parseAnchoredSections(source, heading) {
 }
 
 function rewriteServiceTypeLinks(section) {
-  return section.replace(
-    /\]\(#(chatto-(?:api|admin)-v1-[^)]+)\)/g,
-    '](/reference/connectrpc-api/types/#$1)'
-  );
+  return section
+    .replace(
+      /\]\(#(chatto-(?:auth|discovery|api|admin)-v1-[^)]+)\)/g,
+      '](/reference/connectrpc-api/types/#$1)'
+    )
+    .replace(
+      /`chatto\.(auth|discovery|api|admin)\.v1\.([A-Za-z][A-Za-z0-9_]*)`/g,
+      (_match, pkg, typeName) =>
+        `[\`chatto.${pkg}.v1.${typeName}\`](/reference/connectrpc-api/types/#chatto-${pkg}-v1-${typeName})`
+    );
 }
 
 function rewriteRealtimeExternalLinks(section) {
   return section.replace(
-    /\]\(#(chatto-(?:api|admin)-v1-[^)]+)\)/g,
+    /\]\(#(chatto-(?:auth|discovery|api|admin)-v1-[^)]+)\)/g,
     '](/reference/connectrpc-api/types/#$1)'
   );
 }
@@ -271,14 +265,16 @@ function renderLanding() {
     'For example, public server discovery is:',
     '',
     '```txt',
-    'POST /api/connect/chatto.api.v1.ServerDiscoveryService/GetServer',
+    'POST /api/connect/chatto.discovery.v1.ServerDiscoveryService/GetServer',
     '```',
     '',
-    'Public discovery is unauthenticated. Most other RPCs require an `Authorization: Bearer <token>` header, or a browser session when called by the bundled web client.',
+    '`chatto.discovery.v1` server discovery is unauthenticated. Most other RPCs require an `Authorization: Bearer <token>` header, a capability token carried in the request, or a browser session when called by the bundled web client.',
     '',
     '## Authentication And Permissions',
     '',
-    '[ServerDiscoveryService.GetServer](/reference/connectrpc-api/server-discovery/#chatto-api-v1-ServerDiscoveryService-GetServer) is public so clients can discover branding, registration state, and login providers before a user signs in.',
+    '[ServerDiscoveryService.GetServer](/reference/connectrpc-api/server-discovery/#chatto-discovery-v1-ServerDiscoveryService-GetServer) is public so clients can discover branding, registration state, and login providers before a user signs in.',
+    '',
+    '`chatto.auth.v1` contains public auth flows with their own security model, such as pending external identity confirmation. Those RPCs are unauthenticated at the session layer but require a valid flow token in the request.',
     '',
     'Most `chatto.api.v1` calls require an authenticated user. Non-browser clients should send `Authorization: Bearer <token>`; browser clients can use the active Chatto session. See [External Login Providers](/guides/integrations/external-login-providers/) for login-provider discovery and sign-in configuration.',
     '',
@@ -288,10 +284,22 @@ function renderLanding() {
     '',
     'The API is split by who uses each part and how clients connect to it.',
     '',
+    '**`chatto.discovery.v1`**',
+    '',
+    '- **Transport:** ConnectRPC unary RPCs.',
+    '- **Covers:** Pre-authentication bootstrap, such as server metadata and login discovery.',
+    '- **Contract:** Public discovery API for clients that do not have a normal Chatto session yet.',
+    '',
+    '**`chatto.auth.v1`**',
+    '',
+    '- **Transport:** ConnectRPC unary RPCs.',
+    '- **Covers:** Public auth flows with capability-token authorization, such as pending external identity confirmation.',
+    '- **Contract:** Public auth-flow API for clients that do not have a normal Chatto session yet, or that are completing a browser handoff.',
+    '',
     '**`chatto.api.v1`**',
     '',
     '- **Transport:** ConnectRPC unary RPCs.',
-    '- **Covers:** Normal client and integration behavior: discovery, profile reads, room navigation, messages, reactions, notifications, calls, attachments, and preferences.',
+    '- **Covers:** Normal authenticated client and integration behavior: profile reads, room navigation, messages, reactions, notifications, calls, attachments, and preferences.',
     '- **Contract:** Public client API for integrations, bots, alternate clients, and the bundled web app.',
     '',
     '**`chatto.admin.v1`**',
@@ -317,7 +325,7 @@ function renderLanding() {
     '/api/connect/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo',
     '```',
     '',
-    'Reflection lets tools resolve service and message descriptors without a local copy of the `.proto` files. Chatto limits reflection to public `chatto.api.v1` and `chatto.admin.v1` descriptors plus required imports.',
+    'Reflection lets tools resolve service and message descriptors without a local copy of the `.proto` files. Chatto limits reflection to public `chatto.auth.v1`, `chatto.discovery.v1`, `chatto.api.v1`, and `chatto.admin.v1` descriptors plus required imports.',
     '',
     'Because Chatto mounts ConnectRPC under `/api/connect`, use tools that accept a full Connect URL, such as `buf curl`. gRPC tools that only dial services at the host root need a proxy or path rewrite.',
     '',
@@ -325,14 +333,14 @@ function renderLanding() {
     '',
     '### Public JSON request with curl',
     '',
-    'The Connect protocol accepts JSON for unary requests, which makes [ServerDiscoveryService.GetServer](/reference/connectrpc-api/server-discovery/#chatto-api-v1-ServerDiscoveryService-GetServer) easy to test with ordinary HTTP tools:',
+    'The Connect protocol accepts JSON for unary requests, which makes [ServerDiscoveryService.GetServer](/reference/connectrpc-api/server-discovery/#chatto-discovery-v1-ServerDiscoveryService-GetServer) easy to test with ordinary HTTP tools:',
     '',
     '```sh',
     'curl -X POST \\',
     '  -H "Content-Type: application/json" \\',
     '  -H "Connect-Protocol-Version: 1" \\',
     "  -d '{}' \\",
-    '  https://chat.example.com/api/connect/chatto.api.v1.ServerDiscoveryService/GetServer',
+    '  https://chat.example.com/api/connect/chatto.discovery.v1.ServerDiscoveryService/GetServer',
     '```',
     '',
     '### Authenticated JSON request',
@@ -350,12 +358,12 @@ function renderLanding() {
     '',
     '### Reflection-backed protobuf call with buf curl',
     '',
-    '`buf curl` uses protobuf schemas and can speak the Connect, gRPC, or gRPC-Web protocols. It accepts request data as protobuf JSON for CLI ergonomics, then uses reflection to resolve the request and response types. This example calls [ServerDiscoveryService.GetServer](/reference/connectrpc-api/server-discovery/#chatto-api-v1-ServerDiscoveryService-GetServer) over the Connect protocol:',
+    '`buf curl` uses protobuf schemas and can speak the Connect, gRPC, or gRPC-Web protocols. It accepts request data as protobuf JSON for CLI ergonomics, then uses reflection to resolve the request and response types. This example calls [ServerDiscoveryService.GetServer](/reference/connectrpc-api/server-discovery/#chatto-discovery-v1-ServerDiscoveryService-GetServer) over the Connect protocol:',
     '',
     '```sh',
     'buf curl --protocol connect \\',
     "  -d '{}' \\",
-    '  https://chat.example.com/api/connect/chatto.api.v1.ServerDiscoveryService/GetServer',
+    '  https://chat.example.com/api/connect/chatto.discovery.v1.ServerDiscoveryService/GetServer',
     '```',
     '',
     'For a local plaintext server, use HTTP/2 prior knowledge. You can also switch to gRPC protobuf framing with `--protocol grpc`:',
@@ -364,7 +372,7 @@ function renderLanding() {
     'buf curl --http2-prior-knowledge \\',
     '  --protocol grpc \\',
     "  -d '{}' \\",
-    '  http://localhost:4000/api/connect/chatto.api.v1.ServerDiscoveryService/GetServer',
+    '  http://localhost:4000/api/connect/chatto.discovery.v1.ServerDiscoveryService/GetServer',
     '```',
     '',
     'Add `-v` to see the reflection request before the actual RPC. The first request resolves the schema through `/api/connect/grpc.reflection.v1.ServerReflection/ServerReflectionInfo`; the second request calls your target service.',
@@ -373,14 +381,14 @@ function renderLanding() {
     '',
     'Generated clients and `buf curl` are usually easier, but unary Connect calls can also use raw protobuf wire bytes. Send `Content-Type: application/proto`; the request body is the serialized protobuf request message, and the response body is the serialized protobuf response message.',
     '',
-    '[ServerDiscoveryService.GetServer](/reference/connectrpc-api/server-discovery/#chatto-api-v1-ServerDiscoveryService-GetServer) has an empty request message, so an empty binary body is valid:',
+    '[ServerDiscoveryService.GetServer](/reference/connectrpc-api/server-discovery/#chatto-discovery-v1-ServerDiscoveryService-GetServer) has an empty request message, so an empty binary body is valid:',
     '',
     '```sh',
     'curl -X POST \\',
     '  -H "Content-Type: application/proto" \\',
     '  --data-binary "" \\',
     '  --output get-server.bin \\',
-    '  https://chat.example.com/api/connect/chatto.api.v1.ServerDiscoveryService/GetServer',
+    '  https://chat.example.com/api/connect/chatto.discovery.v1.ServerDiscoveryService/GetServer',
     '```',
     '',
     '`get-server.bin` contains a protobuf-encoded `GetServerResponse`. Decode it with generated code or a protobuf tool that has the Chatto schema.',
@@ -392,7 +400,7 @@ function renderLanding() {
     '```ts',
     'import { createClient } from "@connectrpc/connect";',
     'import { createConnectTransport } from "@connectrpc/connect-web";',
-    'import { ServerDiscoveryService } from "./gen/chatto/api/v1/server_connect";',
+    'import { ServerDiscoveryService } from "./gen/chatto/discovery/v1/server_connect";',
     '',
     'const transport = createConnectTransport({',
     '  baseUrl: "https://chat.example.com/api/connect",',
@@ -428,7 +436,7 @@ function renderLanding() {
     '',
     '## Versioning And Stability',
     '',
-    'Package names such as `chatto.api.v1` and `chatto.admin.v1` identify the public API contract that clients integrate with.',
+    'Package names such as `chatto.auth.v1`, `chatto.discovery.v1`, `chatto.api.v1`, and `chatto.admin.v1` identify the public API contract that clients integrate with.',
     '',
     'Chatto is still pre-1.0, so public API details may change between releases. Check this reference for the Chatto server version you target, and use generated clients that match that server version.',
     '',
@@ -592,13 +600,16 @@ for (const rawReferencePath of rawReferencePaths) {
   const raw = await readFile(rawReferencePath, 'utf8');
   const supportingStart = raw.indexOf('\n## Supporting Types\n');
   const enumsStart = raw.indexOf('\n## Enums\n');
-  if (supportingStart === -1 || enumsStart === -1 || enumsStart < supportingStart) {
-    throw new Error(`Unable to find generated Supporting Types and Enums sections in ${rawReferencePath}.`);
+  if (enumsStart !== -1 && supportingStart !== -1 && enumsStart < supportingStart) {
+    throw new Error(`Generated Enums section appears before Supporting Types in ${rawReferencePath}.`);
   }
 
-  const serviceSource = raw.slice(0, supportingStart);
-  const typeSource = raw.slice(supportingStart, enumsStart);
-  const enumSource = raw.slice(enumsStart);
+  const serviceEnd =
+    supportingStart === -1 ? (enumsStart === -1 ? raw.length : enumsStart) : supportingStart;
+  const typeEnd = enumsStart === -1 ? raw.length : enumsStart;
+  const serviceSource = raw.slice(0, serviceEnd);
+  const typeSource = supportingStart === -1 ? '' : raw.slice(supportingStart, typeEnd);
+  const enumSource = enumsStart === -1 ? '' : raw.slice(enumsStart);
 
   for (const [name, section] of parseAnchoredSections(serviceSource, '##')) {
     serviceSections.set(name, section);

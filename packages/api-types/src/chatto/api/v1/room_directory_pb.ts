@@ -371,13 +371,6 @@ export class RoomGroup extends Message<RoomGroup> {
   description = "";
 
   /**
-   * Visible channel rooms in this group order.
-   *
-   * @generated from field: repeated chatto.api.v1.DirectoryRoom rooms = 4;
-   */
-  rooms: DirectoryRoom[] = [];
-
-  /**
    * Mixed room/sidebar-link entries in sidebar order.
    *
    * @generated from field: repeated chatto.api.v1.RoomGroupItem items = 5;
@@ -395,7 +388,6 @@ export class RoomGroup extends Message<RoomGroup> {
     { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "description", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 4, name: "rooms", kind: "message", T: DirectoryRoom, repeated: true },
     { no: 5, name: "items", kind: "message", T: RoomGroupItem, repeated: true },
   ]);
 
@@ -504,6 +496,15 @@ export class ListRoomsResponse extends Message<ListRoomsResponse> {
  * @generated from message chatto.api.v1.ListRoomGroupsRequest
  */
 export class ListRoomGroupsRequest extends Message<ListRoomGroupsRequest> {
+  /**
+   * Include archived room entries. Ordinary sidebar clients should leave this
+   * false; management surfaces can set it when they need archived rooms for
+   * direct actions such as unarchiving.
+   *
+   * @generated from field: bool include_archived_rooms = 1;
+   */
+  includeArchivedRooms = false;
+
   constructor(data?: PartialMessage<ListRoomGroupsRequest>) {
     super();
     proto3.util.initPartial(data, this);
@@ -512,6 +513,7 @@ export class ListRoomGroupsRequest extends Message<ListRoomGroupsRequest> {
   static readonly runtime: typeof proto3 = proto3;
   static readonly typeName = "chatto.api.v1.ListRoomGroupsRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "include_archived_rooms", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRoomGroupsRequest {
@@ -569,6 +571,190 @@ export class ListRoomGroupsResponse extends Message<ListRoomGroupsResponse> {
 
   static equals(a: ListRoomGroupsResponse | PlainMessage<ListRoomGroupsResponse> | undefined, b: ListRoomGroupsResponse | PlainMessage<ListRoomGroupsResponse> | undefined): boolean {
     return proto3.util.equals(ListRoomGroupsResponse, a, b);
+  }
+}
+
+/**
+ * Request for one ordered room group visible to the current user.
+ *
+ * @generated from message chatto.api.v1.GetRoomGroupRequest
+ */
+export class GetRoomGroupRequest extends Message<GetRoomGroupRequest> {
+  /**
+   * Required. Room group to resolve.
+   *
+   * @generated from field: string group_id = 1;
+   */
+  groupId = "";
+
+  /**
+   * Include archived room entries. Ordinary sidebar clients should leave this
+   * false; management surfaces can set it when they need archived rooms for
+   * direct actions such as unarchiving.
+   *
+   * @generated from field: bool include_archived_rooms = 2;
+   */
+  includeArchivedRooms = false;
+
+  constructor(data?: PartialMessage<GetRoomGroupRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.GetRoomGroupRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "group_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "include_archived_rooms", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRoomGroupRequest {
+    return new GetRoomGroupRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRoomGroupRequest {
+    return new GetRoomGroupRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRoomGroupRequest {
+    return new GetRoomGroupRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: GetRoomGroupRequest | PlainMessage<GetRoomGroupRequest> | undefined, b: GetRoomGroupRequest | PlainMessage<GetRoomGroupRequest> | undefined): boolean {
+    return proto3.util.equals(GetRoomGroupRequest, a, b);
+  }
+}
+
+/**
+ * One ordered room group visible to the current user.
+ *
+ * @generated from message chatto.api.v1.GetRoomGroupResponse
+ */
+export class GetRoomGroupResponse extends Message<GetRoomGroupResponse> {
+  /**
+   * Resolved room group. Hidden and archived room entries are omitted.
+   *
+   * @generated from field: chatto.api.v1.RoomGroup group = 1;
+   */
+  group?: RoomGroup;
+
+  constructor(data?: PartialMessage<GetRoomGroupResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.GetRoomGroupResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "group", kind: "message", T: RoomGroup },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetRoomGroupResponse {
+    return new GetRoomGroupResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): GetRoomGroupResponse {
+    return new GetRoomGroupResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): GetRoomGroupResponse {
+    return new GetRoomGroupResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: GetRoomGroupResponse | PlainMessage<GetRoomGroupResponse> | undefined, b: GetRoomGroupResponse | PlainMessage<GetRoomGroupResponse> | undefined): boolean {
+    return proto3.util.equals(GetRoomGroupResponse, a, b);
+  }
+}
+
+/**
+ * Request visible room groups by stable group ID.
+ *
+ * @generated from message chatto.api.v1.BatchGetRoomGroupsRequest
+ */
+export class BatchGetRoomGroupsRequest extends Message<BatchGetRoomGroupsRequest> {
+  /**
+   * Required room group IDs. Unknown groups are omitted from the response.
+   *
+   * @generated from field: repeated string group_ids = 1;
+   */
+  groupIds: string[] = [];
+
+  /**
+   * Include archived room entries. Ordinary sidebar clients should leave this
+   * false; management surfaces can set it when they need archived rooms for
+   * direct actions such as unarchiving.
+   *
+   * @generated from field: bool include_archived_rooms = 2;
+   */
+  includeArchivedRooms = false;
+
+  constructor(data?: PartialMessage<BatchGetRoomGroupsRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.BatchGetRoomGroupsRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "group_ids", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 2, name: "include_archived_rooms", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): BatchGetRoomGroupsRequest {
+    return new BatchGetRoomGroupsRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): BatchGetRoomGroupsRequest {
+    return new BatchGetRoomGroupsRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): BatchGetRoomGroupsRequest {
+    return new BatchGetRoomGroupsRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: BatchGetRoomGroupsRequest | PlainMessage<BatchGetRoomGroupsRequest> | undefined, b: BatchGetRoomGroupsRequest | PlainMessage<BatchGetRoomGroupsRequest> | undefined): boolean {
+    return proto3.util.equals(BatchGetRoomGroupsRequest, a, b);
+  }
+}
+
+/**
+ * Visible room group batch response for direct group hydration.
+ *
+ * @generated from message chatto.api.v1.BatchGetRoomGroupsResponse
+ */
+export class BatchGetRoomGroupsResponse extends Message<BatchGetRoomGroupsResponse> {
+  /**
+   * Resolved room groups in first-seen request order.
+   *
+   * @generated from field: repeated chatto.api.v1.RoomGroup groups = 1;
+   */
+  groups: RoomGroup[] = [];
+
+  constructor(data?: PartialMessage<BatchGetRoomGroupsResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.BatchGetRoomGroupsResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "groups", kind: "message", T: RoomGroup, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): BatchGetRoomGroupsResponse {
+    return new BatchGetRoomGroupsResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): BatchGetRoomGroupsResponse {
+    return new BatchGetRoomGroupsResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): BatchGetRoomGroupsResponse {
+    return new BatchGetRoomGroupsResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: BatchGetRoomGroupsResponse | PlainMessage<BatchGetRoomGroupsResponse> | undefined, b: BatchGetRoomGroupsResponse | PlainMessage<BatchGetRoomGroupsResponse> | undefined): boolean {
+    return proto3.util.equals(BatchGetRoomGroupsResponse, a, b);
   }
 }
 
@@ -651,5 +837,89 @@ export class GetRoomResponse extends Message<GetRoomResponse> {
 
   static equals(a: GetRoomResponse | PlainMessage<GetRoomResponse> | undefined, b: GetRoomResponse | PlainMessage<GetRoomResponse> | undefined): boolean {
     return proto3.util.equals(GetRoomResponse, a, b);
+  }
+}
+
+/**
+ * Request visible rooms by stable room ID.
+ *
+ * @generated from message chatto.api.v1.BatchGetRoomsRequest
+ */
+export class BatchGetRoomsRequest extends Message<BatchGetRoomsRequest> {
+  /**
+   * Required room IDs. Unknown rooms and rooms hidden from the caller are
+   * omitted from the response. Archived rooms may be returned when the caller
+   * can still refresh them directly.
+   *
+   * @generated from field: repeated string room_ids = 1;
+   */
+  roomIds: string[] = [];
+
+  constructor(data?: PartialMessage<BatchGetRoomsRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.BatchGetRoomsRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "room_ids", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): BatchGetRoomsRequest {
+    return new BatchGetRoomsRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): BatchGetRoomsRequest {
+    return new BatchGetRoomsRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): BatchGetRoomsRequest {
+    return new BatchGetRoomsRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: BatchGetRoomsRequest | PlainMessage<BatchGetRoomsRequest> | undefined, b: BatchGetRoomsRequest | PlainMessage<BatchGetRoomsRequest> | undefined): boolean {
+    return proto3.util.equals(BatchGetRoomsRequest, a, b);
+  }
+}
+
+/**
+ * Visible room batch response for direct room hydration.
+ *
+ * @generated from message chatto.api.v1.BatchGetRoomsResponse
+ */
+export class BatchGetRoomsResponse extends Message<BatchGetRoomsResponse> {
+  /**
+   * Resolved rooms in first-seen request order.
+   *
+   * @generated from field: repeated chatto.api.v1.DirectoryRoom rooms = 1;
+   */
+  rooms: DirectoryRoom[] = [];
+
+  constructor(data?: PartialMessage<BatchGetRoomsResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.BatchGetRoomsResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "rooms", kind: "message", T: DirectoryRoom, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): BatchGetRoomsResponse {
+    return new BatchGetRoomsResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): BatchGetRoomsResponse {
+    return new BatchGetRoomsResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): BatchGetRoomsResponse {
+    return new BatchGetRoomsResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: BatchGetRoomsResponse | PlainMessage<BatchGetRoomsResponse> | undefined, b: BatchGetRoomsResponse | PlainMessage<BatchGetRoomsResponse> | undefined): boolean {
+    return proto3.util.equals(BatchGetRoomsResponse, a, b);
   }
 }

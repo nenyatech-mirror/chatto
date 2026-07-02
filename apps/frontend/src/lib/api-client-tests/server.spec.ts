@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getPublicServerInfo } from '@chatto/api-client/server';
+import { getPublicServerInfo } from '$lib/api-client/server';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -55,7 +55,8 @@ describe('getPublicServerInfo', () => {
     const info = await getPublicServerInfo('https://chat.example.test');
 
     expect(mocks.createConnectTransport).toHaveBeenCalledWith({
-      baseUrl: 'https://chat.example.test/api/connect'
+      baseUrl: 'https://chat.example.test/api/connect',
+      useBinaryFormat: false
     });
     expect(mocks.getServer).toHaveBeenCalledWith({}, { signal: undefined });
     expect(info).toEqual({

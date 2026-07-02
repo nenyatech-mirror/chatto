@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"connectrpc.com/connect"
+	"hmans.de/chatto/internal/core"
 	apiv1 "hmans.de/chatto/internal/pb/chatto/api/v1"
 	corev1 "hmans.de/chatto/internal/pb/chatto/core/v1"
 )
@@ -25,6 +26,64 @@ func (s *notificationService) ListNotifications(ctx context.Context, req *connec
 	return s.notificationPage(ctx, caller.UserID, req.Msg.GetPage(), nil)
 }
 
+func (s *notificationService) GetNotification(ctx context.Context, req *connect.Request[apiv1.GetNotificationRequest]) (*connect.Response[apiv1.GetNotificationResponse], error) {
+	caller, err := requireCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	notification, err := s.api.core.GetNotification(ctx, caller.UserID, req.Msg.GetNotificationId())
+	if err != nil {
+		return nil, connectError(err)
+	}
+	if notification == nil {
+		return nil, connectError(core.ErrNotFound)
+	}
+	assembler := newNotificationAssembler(s.api)
+	item, err := assembler.item(ctx, notification)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	return connect.NewResponse(&apiv1.GetNotificationResponse{
+		Notification: item,
+		ServerName:   assembler.emptyPage(ctx).GetServerName(),
+	}), nil
+}
+
+func (s *notificationService) BatchGetNotifications(ctx context.Context, req *connect.Request[apiv1.BatchGetNotificationsRequest]) (*connect.Response[apiv1.BatchGetNotificationsResponse], error) {
+	caller, err := requireCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	assembler := newNotificationAssembler(s.api)
+	seen := make(map[string]struct{}, len(req.Msg.GetNotificationIds()))
+	notifications := make([]*apiv1.NotificationItem, 0, len(req.Msg.GetNotificationIds()))
+	for _, notificationID := range req.Msg.GetNotificationIds() {
+		if _, ok := seen[notificationID]; ok {
+			continue
+		}
+		seen[notificationID] = struct{}{}
+
+		notification, err := s.api.core.GetNotification(ctx, caller.UserID, notificationID)
+		if err != nil {
+			return nil, connectError(err)
+		}
+		if notification == nil {
+			continue
+		}
+		item, err := assembler.item(ctx, notification)
+		if err != nil {
+			return nil, connectError(err)
+		}
+		notifications = append(notifications, item)
+	}
+	return connect.NewResponse(&apiv1.BatchGetNotificationsResponse{
+		Notifications: notifications,
+		ServerName:    assembler.emptyPage(ctx).GetServerName(),
+	}), nil
+}
+
 func (s *notificationService) ListRoomNotifications(ctx context.Context, req *connect.Request[apiv1.ListRoomNotificationsRequest]) (*connect.Response[apiv1.ListRoomNotificationsResponse], error) {
 	caller, err := requireCaller(ctx)
 	if err != nil {
@@ -39,9 +98,9 @@ func (s *notificationService) ListRoomNotifications(ctx context.Context, req *co
 		return nil, connectError(err)
 	}
 	return connect.NewResponse(&apiv1.ListRoomNotificationsResponse{
-		Items:      page.GetItems(),
-		ServerName: page.GetServerName(),
-		Page:       page.GetPage(),
+		Notifications: page.GetNotifications(),
+		ServerName:    page.GetServerName(),
+		Page:          page.GetPage(),
 	}), nil
 }
 
@@ -57,7 +116,7 @@ func (s *notificationService) HasNotifications(ctx context.Context, _ *connect.R
 	return connect.NewResponse(&apiv1.HasNotificationsResponse{HasNotifications: has}), nil
 }
 
-func (s *notificationService) ListNotificationCounts(ctx context.Context, _ *connect.Request[apiv1.ListNotificationCountsRequest]) (*connect.Response[apiv1.ListNotificationCountsResponse], error) {
+func (s *notificationService) ListRoomNotificationCounts(ctx context.Context, _ *connect.Request[apiv1.ListRoomNotificationCountsRequest]) (*connect.Response[apiv1.ListRoomNotificationCountsResponse], error) {
 	caller, err := requireCaller(ctx)
 	if err != nil {
 		return nil, err
@@ -81,7 +140,7 @@ func (s *notificationService) ListNotificationCounts(ctx context.Context, _ *con
 			TotalCount: count,
 		})
 	}
-	return connect.NewResponse(&apiv1.ListNotificationCountsResponse{RoomCounts: roomCounts}), nil
+	return connect.NewResponse(&apiv1.ListRoomNotificationCountsResponse{RoomCounts: roomCounts}), nil
 }
 
 func (s *notificationService) DismissNotification(ctx context.Context, req *connect.Request[apiv1.DismissNotificationRequest]) (*connect.Response[apiv1.DismissNotificationResponse], error) {

@@ -7,6 +7,7 @@ import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialM
 import { Message, proto3, Timestamp } from "@bufbuild/protobuf";
 import { DirectoryMember } from "./member_directory_pb.js";
 import { PageInfo, PageRequest } from "./pagination_pb.js";
+import { AttachmentThumbnailOptions, RoomAttachmentListItem } from "./attachments_pb.js";
 
 /**
  * Kind of room represented by the public API.
@@ -253,18 +254,18 @@ export class UpdateRoomRequest extends Message<UpdateRoomRequest> {
   roomId = "";
 
   /**
-   * Required. New room name.
+   * New room name, when changing it.
    *
-   * @generated from field: string name = 2;
+   * @generated from field: optional string name = 2;
    */
-  name = "";
+  name?: string;
 
   /**
-   * Optional new room description.
+   * New room description, when changing it. Empty clears the description.
    *
-   * @generated from field: string description = 3;
+   * @generated from field: optional string description = 3;
    */
-  description = "";
+  description?: string;
 
   constructor(data?: PartialMessage<UpdateRoomRequest>) {
     super();
@@ -275,8 +276,8 @@ export class UpdateRoomRequest extends Message<UpdateRoomRequest> {
   static readonly typeName = "chatto.api.v1.UpdateRoomRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "room_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 3, name: "description", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "name", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
+    { no: 3, name: "description", kind: "scalar", T: 9 /* ScalarType.STRING */, opt: true },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): UpdateRoomRequest {
@@ -504,9 +505,9 @@ export class UnarchiveRoomResponse extends Message<UnarchiveRoomResponse> {
 /**
  * Request to change a channel room's universal membership flag.
  *
- * @generated from message chatto.api.v1.SetRoomUniversalRequest
+ * @generated from message chatto.api.v1.UpdateRoomUniversalRequest
  */
-export class SetRoomUniversalRequest extends Message<SetRoomUniversalRequest> {
+export class UpdateRoomUniversalRequest extends Message<UpdateRoomUniversalRequest> {
   /**
    * Required. Channel room to update.
    *
@@ -521,41 +522,41 @@ export class SetRoomUniversalRequest extends Message<SetRoomUniversalRequest> {
    */
   universal = false;
 
-  constructor(data?: PartialMessage<SetRoomUniversalRequest>) {
+  constructor(data?: PartialMessage<UpdateRoomUniversalRequest>) {
     super();
     proto3.util.initPartial(data, this);
   }
 
   static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.api.v1.SetRoomUniversalRequest";
+  static readonly typeName = "chatto.api.v1.UpdateRoomUniversalRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "room_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "universal", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
   ]);
 
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SetRoomUniversalRequest {
-    return new SetRoomUniversalRequest().fromBinary(bytes, options);
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): UpdateRoomUniversalRequest {
+    return new UpdateRoomUniversalRequest().fromBinary(bytes, options);
   }
 
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SetRoomUniversalRequest {
-    return new SetRoomUniversalRequest().fromJson(jsonValue, options);
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): UpdateRoomUniversalRequest {
+    return new UpdateRoomUniversalRequest().fromJson(jsonValue, options);
   }
 
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SetRoomUniversalRequest {
-    return new SetRoomUniversalRequest().fromJsonString(jsonString, options);
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): UpdateRoomUniversalRequest {
+    return new UpdateRoomUniversalRequest().fromJsonString(jsonString, options);
   }
 
-  static equals(a: SetRoomUniversalRequest | PlainMessage<SetRoomUniversalRequest> | undefined, b: SetRoomUniversalRequest | PlainMessage<SetRoomUniversalRequest> | undefined): boolean {
-    return proto3.util.equals(SetRoomUniversalRequest, a, b);
+  static equals(a: UpdateRoomUniversalRequest | PlainMessage<UpdateRoomUniversalRequest> | undefined, b: UpdateRoomUniversalRequest | PlainMessage<UpdateRoomUniversalRequest> | undefined): boolean {
+    return proto3.util.equals(UpdateRoomUniversalRequest, a, b);
   }
 }
 
 /**
  * Result of changing a channel room's universal membership flag.
  *
- * @generated from message chatto.api.v1.SetRoomUniversalResponse
+ * @generated from message chatto.api.v1.UpdateRoomUniversalResponse
  */
-export class SetRoomUniversalResponse extends Message<SetRoomUniversalResponse> {
+export class UpdateRoomUniversalResponse extends Message<UpdateRoomUniversalResponse> {
   /**
    * Updated room.
    *
@@ -563,31 +564,31 @@ export class SetRoomUniversalResponse extends Message<SetRoomUniversalResponse> 
    */
   room?: Room;
 
-  constructor(data?: PartialMessage<SetRoomUniversalResponse>) {
+  constructor(data?: PartialMessage<UpdateRoomUniversalResponse>) {
     super();
     proto3.util.initPartial(data, this);
   }
 
   static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.api.v1.SetRoomUniversalResponse";
+  static readonly typeName = "chatto.api.v1.UpdateRoomUniversalResponse";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "room", kind: "message", T: Room },
   ]);
 
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SetRoomUniversalResponse {
-    return new SetRoomUniversalResponse().fromBinary(bytes, options);
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): UpdateRoomUniversalResponse {
+    return new UpdateRoomUniversalResponse().fromBinary(bytes, options);
   }
 
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SetRoomUniversalResponse {
-    return new SetRoomUniversalResponse().fromJson(jsonValue, options);
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): UpdateRoomUniversalResponse {
+    return new UpdateRoomUniversalResponse().fromJson(jsonValue, options);
   }
 
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SetRoomUniversalResponse {
-    return new SetRoomUniversalResponse().fromJsonString(jsonString, options);
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): UpdateRoomUniversalResponse {
+    return new UpdateRoomUniversalResponse().fromJsonString(jsonString, options);
   }
 
-  static equals(a: SetRoomUniversalResponse | PlainMessage<SetRoomUniversalResponse> | undefined, b: SetRoomUniversalResponse | PlainMessage<SetRoomUniversalResponse> | undefined): boolean {
-    return proto3.util.equals(SetRoomUniversalResponse, a, b);
+  static equals(a: UpdateRoomUniversalResponse | PlainMessage<UpdateRoomUniversalResponse> | undefined, b: UpdateRoomUniversalResponse | PlainMessage<UpdateRoomUniversalResponse> | undefined): boolean {
+    return proto3.util.equals(UpdateRoomUniversalResponse, a, b);
   }
 }
 
@@ -1333,5 +1334,201 @@ export class ListRoomBansResponse extends Message<ListRoomBansResponse> {
 
   static equals(a: ListRoomBansResponse | PlainMessage<ListRoomBansResponse> | undefined, b: ListRoomBansResponse | PlainMessage<ListRoomBansResponse> | undefined): boolean {
     return proto3.util.equals(ListRoomBansResponse, a, b);
+  }
+}
+
+/**
+ * Request for room-scoped attachment list pages.
+ *
+ * @generated from message chatto.api.v1.ListRoomAttachmentsRequest
+ */
+export class ListRoomAttachmentsRequest extends Message<ListRoomAttachmentsRequest> {
+  /**
+   * Required room ID.
+   *
+   * @generated from field: string room_id = 1;
+   */
+  roomId = "";
+
+  /**
+   * Thumbnail URL options. Defaults are applied when absent.
+   *
+   * @generated from field: chatto.api.v1.AttachmentThumbnailOptions thumbnail = 4;
+   */
+  thumbnail?: AttachmentThumbnailOptions;
+
+  /**
+   * Page request. Defaults are applied when absent or limit is zero.
+   *
+   * @generated from field: chatto.api.v1.PageRequest page = 5;
+   */
+  page?: PageRequest;
+
+  constructor(data?: PartialMessage<ListRoomAttachmentsRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.ListRoomAttachmentsRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "room_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "thumbnail", kind: "message", T: AttachmentThumbnailOptions },
+    { no: 5, name: "page", kind: "message", T: PageRequest },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRoomAttachmentsRequest {
+    return new ListRoomAttachmentsRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListRoomAttachmentsRequest {
+    return new ListRoomAttachmentsRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListRoomAttachmentsRequest {
+    return new ListRoomAttachmentsRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListRoomAttachmentsRequest | PlainMessage<ListRoomAttachmentsRequest> | undefined, b: ListRoomAttachmentsRequest | PlainMessage<ListRoomAttachmentsRequest> | undefined): boolean {
+    return proto3.util.equals(ListRoomAttachmentsRequest, a, b);
+  }
+}
+
+/**
+ * Room-scoped attachment list response.
+ *
+ * @generated from message chatto.api.v1.ListRoomAttachmentsResponse
+ */
+export class ListRoomAttachmentsResponse extends Message<ListRoomAttachmentsResponse> {
+  /**
+   * Current attachments in newest message order.
+   *
+   * @generated from field: repeated chatto.api.v1.RoomAttachmentListItem attachments = 1;
+   */
+  attachments: RoomAttachmentListItem[] = [];
+
+  /**
+   * Page metadata.
+   *
+   * @generated from field: chatto.api.v1.PageInfo page = 4;
+   */
+  page?: PageInfo;
+
+  constructor(data?: PartialMessage<ListRoomAttachmentsResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.ListRoomAttachmentsResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "attachments", kind: "message", T: RoomAttachmentListItem, repeated: true },
+    { no: 4, name: "page", kind: "message", T: PageInfo },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRoomAttachmentsResponse {
+    return new ListRoomAttachmentsResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListRoomAttachmentsResponse {
+    return new ListRoomAttachmentsResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListRoomAttachmentsResponse {
+    return new ListRoomAttachmentsResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListRoomAttachmentsResponse | PlainMessage<ListRoomAttachmentsResponse> | undefined, b: ListRoomAttachmentsResponse | PlainMessage<ListRoomAttachmentsResponse> | undefined): boolean {
+    return proto3.util.equals(ListRoomAttachmentsResponse, a, b);
+  }
+}
+
+/**
+ * Request to refresh the current user's live-only typing indicator.
+ *
+ * @generated from message chatto.api.v1.UpdateTypingIndicatorRequest
+ */
+export class UpdateTypingIndicatorRequest extends Message<UpdateTypingIndicatorRequest> {
+  /**
+   * Required. Room where the current user is typing.
+   *
+   * @generated from field: string room_id = 1;
+   */
+  roomId = "";
+
+  /**
+   * Event ID of the thread root when typing inside a thread.
+   *
+   * @generated from field: string thread_root_event_id = 2;
+   */
+  threadRootEventId = "";
+
+  constructor(data?: PartialMessage<UpdateTypingIndicatorRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.UpdateTypingIndicatorRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "room_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "thread_root_event_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): UpdateTypingIndicatorRequest {
+    return new UpdateTypingIndicatorRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): UpdateTypingIndicatorRequest {
+    return new UpdateTypingIndicatorRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): UpdateTypingIndicatorRequest {
+    return new UpdateTypingIndicatorRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: UpdateTypingIndicatorRequest | PlainMessage<UpdateTypingIndicatorRequest> | undefined, b: UpdateTypingIndicatorRequest | PlainMessage<UpdateTypingIndicatorRequest> | undefined): boolean {
+    return proto3.util.equals(UpdateTypingIndicatorRequest, a, b);
+  }
+}
+
+/**
+ * Result of refreshing a typing indicator.
+ *
+ * @generated from message chatto.api.v1.UpdateTypingIndicatorResponse
+ */
+export class UpdateTypingIndicatorResponse extends Message<UpdateTypingIndicatorResponse> {
+  /**
+   * True when the typing indicator was accepted for publish.
+   *
+   * @generated from field: bool updated = 1;
+   */
+  updated = false;
+
+  constructor(data?: PartialMessage<UpdateTypingIndicatorResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.api.v1.UpdateTypingIndicatorResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "updated", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): UpdateTypingIndicatorResponse {
+    return new UpdateTypingIndicatorResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): UpdateTypingIndicatorResponse {
+    return new UpdateTypingIndicatorResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): UpdateTypingIndicatorResponse {
+    return new UpdateTypingIndicatorResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: UpdateTypingIndicatorResponse | PlainMessage<UpdateTypingIndicatorResponse> | undefined, b: UpdateTypingIndicatorResponse | PlainMessage<UpdateTypingIndicatorResponse> | undefined): boolean {
+    return proto3.util.equals(UpdateTypingIndicatorResponse, a, b);
   }
 }

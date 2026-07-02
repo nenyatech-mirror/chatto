@@ -9,6 +9,7 @@ import (
 	"hmans.de/chatto/internal/core"
 	adminv1 "hmans.de/chatto/internal/pb/chatto/admin/v1"
 	apiv1 "hmans.de/chatto/internal/pb/chatto/api/v1"
+	configv1 "hmans.de/chatto/internal/pb/chatto/config/v1"
 )
 
 type serverService struct {
@@ -16,16 +17,11 @@ type serverService struct {
 }
 
 func (s *serverService) GetServerState(ctx context.Context, _ *connect.Request[apiv1.GetServerStateRequest]) (*connect.Response[apiv1.GetServerStateResponse], error) {
-	caller, err := requireCaller(ctx)
-	if err != nil {
+	if _, err := requireCaller(ctx); err != nil {
 		return nil, err
 	}
 
-	profile, err := s.serverMemberProfile(ctx)
-	if err != nil {
-		return nil, err
-	}
-	permissions, state, err := s.serverViewerState(ctx, caller.UserID)
+	profile, err := s.serverProfile(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -45,8 +41,6 @@ func (s *serverService) GetServerState(ctx context.Context, _ *connect.Request[a
 			MaxVideoUploadSize:        maxVideoUploadSize,
 			MessageEditWindowSeconds:  int32(core.MessageEditWindow / time.Second),
 		},
-		ViewerPermissions: permissions,
-		ViewerState:       state,
 	}
 	if s.api.config.Push.IsConfigured() {
 		response.Runtime.VapidPublicKey = stringPtr(s.api.config.Push.VAPIDPublicKey)
@@ -58,13 +52,34 @@ func (s *serverService) GetServerState(ctx context.Context, _ *connect.Request[a
 	return connect.NewResponse(response), nil
 }
 
+func (s *serverService) GetServerConfig(ctx context.Context, _ *connect.Request[adminv1.GetServerConfigRequest]) (*connect.Response[adminv1.GetServerConfigResponse], error) {
+	caller, err := requireCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg, err := s.api.core.GetManagedServerConfig(ctx, caller.UserID)
+	if err != nil {
+		return nil, connectError(err)
+	}
+	profile, err := s.serverProfile(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return connect.NewResponse(&adminv1.GetServerConfigResponse{
+		Config:  adminServerConfig(cfg),
+		Profile: profile,
+	}), nil
+}
+
 func (s *serverService) UpdateServerConfig(ctx context.Context, req *connect.Request[adminv1.UpdateServerConfigRequest]) (*connect.Response[adminv1.UpdateServerConfigResponse], error) {
 	caller, err := requireCaller(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = s.api.core.UpdateServerConfig(ctx, caller.UserID, core.ServerConfigUpdateInput{
+	cfg, err := s.api.core.UpdateServerConfig(ctx, caller.UserID, core.ServerConfigUpdateInput{
 		ServerName:     req.Msg.ServerName,
 		Description:    req.Msg.Description,
 		MOTD:           req.Msg.Motd,
@@ -74,11 +89,14 @@ func (s *serverService) UpdateServerConfig(ctx context.Context, req *connect.Req
 		return nil, connectError(err)
 	}
 
-	profile, err := s.serverMemberProfile(ctx)
+	profile, err := s.serverProfile(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return connect.NewResponse(&adminv1.UpdateServerConfigResponse{Profile: profile}), nil
+	return connect.NewResponse(&adminv1.UpdateServerConfigResponse{
+		Profile: profile,
+		Config:  adminServerConfig(cfg),
+	}), nil
 }
 
 func (s *serverService) UploadServerLogo(ctx context.Context, req *connect.Request[adminv1.UploadServerLogoRequest]) (*connect.Response[adminv1.UploadServerLogoResponse], error) {
@@ -93,7 +111,7 @@ func (s *serverService) UploadServerLogo(ctx context.Context, req *connect.Reque
 	if _, err := s.api.core.UploadManagedServerLogo(ctx, caller.UserID, bytes.NewReader(req.Msg.GetImage())); err != nil {
 		return nil, connectError(err)
 	}
-	profile, err := s.serverMemberProfile(ctx)
+	profile, err := s.serverProfile(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +126,7 @@ func (s *serverService) DeleteServerLogo(ctx context.Context, _ *connect.Request
 	if err := s.api.core.DeleteManagedServerLogo(ctx, caller.UserID); err != nil {
 		return nil, connectError(err)
 	}
-	profile, err := s.serverMemberProfile(ctx)
+	profile, err := s.serverProfile(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +145,7 @@ func (s *serverService) UploadServerBanner(ctx context.Context, req *connect.Req
 	if _, err := s.api.core.UploadManagedServerBanner(ctx, caller.UserID, bytes.NewReader(req.Msg.GetImage())); err != nil {
 		return nil, connectError(err)
 	}
-	profile, err := s.serverMemberProfile(ctx)
+	profile, err := s.serverProfile(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +160,7 @@ func (s *serverService) DeleteServerBanner(ctx context.Context, _ *connect.Reque
 	if err := s.api.core.DeleteManagedServerBanner(ctx, caller.UserID); err != nil {
 		return nil, connectError(err)
 	}
-	profile, err := s.serverMemberProfile(ctx)
+	profile, err := s.serverProfile(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -181,12 +199,24 @@ func (s *serverService) UpdateBlockedUsernames(ctx context.Context, req *connect
 	}), nil
 }
 
-func (s *serverService) serverMemberProfile(ctx context.Context) (*apiv1.ServerMemberProfile, error) {
+func adminServerConfig(cfg *configv1.ServerConfig) *adminv1.ServerConfig {
+	if cfg == nil {
+		return &adminv1.ServerConfig{}
+	}
+	return &adminv1.ServerConfig{
+		ServerName:     cfg.GetServerName(),
+		Description:    cfg.GetDescription(),
+		Motd:           cfg.GetMotd(),
+		WelcomeMessage: cfg.GetWelcomeMessage(),
+	}
+}
+
+func (s *serverService) serverProfile(ctx context.Context) (*apiv1.ServerProfile, error) {
 	publicProfile, err := s.api.serverProfile(ctx, serverProfileOptions{})
 	if err != nil {
 		return nil, err
 	}
-	profile := &apiv1.ServerMemberProfile{PublicProfile: publicProfile}
+	profile := &apiv1.ServerProfile{PublicProfile: publicProfile}
 	if cm := s.api.core.ConfigManager(); cm != nil {
 		motd, err := cm.GetEffectiveMOTD(ctx)
 		if err != nil {
@@ -199,8 +229,8 @@ func (s *serverService) serverMemberProfile(ctx context.Context) (*apiv1.ServerM
 	return profile, nil
 }
 
-func (s *serverService) serverViewerState(ctx context.Context, userID string) (*apiv1.ServerViewerPermissions, *apiv1.ServerViewerState, error) {
-	hasUnreadRooms, err := s.viewerHasUnreadRooms(ctx, userID)
+func (a *API) serverViewerState(ctx context.Context, userID string) (*apiv1.ServerViewerPermissions, *apiv1.ServerViewerState, error) {
+	hasUnreadRooms, err := a.viewerHasUnreadRooms(ctx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -209,7 +239,7 @@ func (s *serverService) serverViewerState(ctx context.Context, userID string) (*
 		Permissions: make([]*apiv1.PermissionGrant, 0, len(core.AllPermissions())),
 	}
 	for _, meta := range core.AllPermissions() {
-		granted, err := s.api.core.HasUserPermissionViaRoles(ctx, userID, meta.Permission)
+		granted, err := a.core.HasUserPermissionViaRoles(ctx, userID, meta.Permission)
 		if err != nil {
 			return nil, nil, connectError(err)
 		}
@@ -222,13 +252,13 @@ func (s *serverService) serverViewerState(ctx context.Context, userID string) (*
 	return permissions, &apiv1.ServerViewerState{HasUnreadRooms: hasUnreadRooms}, nil
 }
 
-func (s *serverService) viewerHasUnreadRooms(ctx context.Context, userID string) (bool, error) {
-	rooms, err := s.api.core.ListMemberRooms(ctx, core.KindChannel, userID, core.MemberRoomListOptions{})
+func (a *API) viewerHasUnreadRooms(ctx context.Context, userID string) (bool, error) {
+	rooms, err := a.core.ListMemberRooms(ctx, core.KindChannel, userID, core.MemberRoomListOptions{})
 	if err != nil {
 		return false, connectError(err)
 	}
 	for _, room := range rooms {
-		hasUnread, err := s.api.core.HasUnread(ctx, core.KindChannel, userID, room.GetId())
+		hasUnread, err := a.core.HasUnread(ctx, core.KindChannel, userID, room.GetId())
 		if err != nil {
 			continue
 		}

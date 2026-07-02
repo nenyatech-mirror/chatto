@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureApiClientHooks } from '@chatto/api-client/hooks';
+import { configureApiClientHooks } from '$lib/api-client/hooks';
 import { Timestamp } from '@bufbuild/protobuf';
 import {
   RoomTimelineAssetUrl,
@@ -21,7 +21,7 @@ import {
 import {
   createRoomTimelineAPI,
   roomTimelinePageToEventConnectionPage
-} from '@chatto/api-client/roomTimeline';
+} from '$lib/api-client/roomTimeline';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -278,14 +278,15 @@ describe('roomTimelinePageToEventConnectionPage', () => {
                 })
               ],
               replyCount: 1,
-              threadParticipantUserIds: ['u2'],
+              threadParticipantPreviewUserIds: ['u2'],
+              threadParticipantCount: 1,
               viewerIsFollowingThread: true,
               reactions: [
                 {
                   emoji: 'thumbsup',
                   count: 2,
                   hasReacted: true,
-                  userIds: ['u1', 'u2']
+                  previewUserIds: ['u1', 'u2']
                 }
               ]
             })

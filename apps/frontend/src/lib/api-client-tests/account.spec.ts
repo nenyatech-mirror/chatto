@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TimeFormat as APITimeFormat } from '@chatto/api-types/api/v1/viewer_pb';
-import { TimeFormat } from '@chatto/api-client/renderTypes';
-import { createAccountAPI } from '@chatto/api-client/account';
+import { TimeFormat } from '$lib/api-client/renderTypes';
+import { createAccountAPI } from '$lib/api-client/account';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   updateProfile: vi.fn(),
   uploadAvatar: vi.fn(),
   deleteAvatar: vi.fn(),
-  setPassword: vi.fn(),
+  updatePassword: vi.fn(),
   updateSettings: vi.fn(),
   requestAccountDeletion: vi.fn(),
   deleteMyAccount: vi.fn()
@@ -34,7 +34,7 @@ describe('createAccountAPI', () => {
     mocks.updateProfile.mockReset();
     mocks.uploadAvatar.mockReset();
     mocks.deleteAvatar.mockReset();
-    mocks.setPassword.mockReset();
+    mocks.updatePassword.mockReset();
     mocks.updateSettings.mockReset();
     mocks.requestAccountDeletion.mockReset();
     mocks.deleteMyAccount.mockReset();
@@ -43,7 +43,7 @@ describe('createAccountAPI', () => {
       updateProfile: mocks.updateProfile,
       uploadAvatar: mocks.uploadAvatar,
       deleteAvatar: mocks.deleteAvatar,
-      setPassword: mocks.setPassword,
+      updatePassword: mocks.updatePassword,
       updateSettings: mocks.updateSettings,
       requestAccountDeletion: mocks.requestAccountDeletion,
       deleteMyAccount: mocks.deleteMyAccount
@@ -158,7 +158,7 @@ describe('createAccountAPI', () => {
   });
 
   it('sets a password with bearer auth', async () => {
-    mocks.setPassword.mockResolvedValue({});
+    mocks.updatePassword.mockResolvedValue({});
 
     const api = createAccountAPI({
       baseUrl: '/api/connect',
@@ -166,10 +166,10 @@ describe('createAccountAPI', () => {
     });
 
     await expect(
-      api.setPassword({ password: 'newpassword456', currentPassword: 'oldpassword123' })
+      api.updatePassword({ password: 'newpassword456', currentPassword: 'oldpassword123' })
     ).resolves.toBeUndefined();
 
-    expect(mocks.setPassword).toHaveBeenCalledWith(
+    expect(mocks.updatePassword).toHaveBeenCalledWith(
       { password: 'newpassword456', currentPassword: 'oldpassword123' },
       { headers: { Authorization: 'Bearer token' } }
     );

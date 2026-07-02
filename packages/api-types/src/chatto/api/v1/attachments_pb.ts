@@ -5,7 +5,6 @@
 
 import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialMessage, PlainMessage } from "@bufbuild/protobuf";
 import { Message, proto3, Timestamp } from "@bufbuild/protobuf";
-import { PageInfo, PageRequest } from "./pagination_pb.js";
 import { RoomTimelineAssetUrl, RoomTimelineAttachment, RoomTimelineVideoVariant } from "./room_timeline_pb.js";
 
 /**
@@ -100,63 +99,6 @@ export class AttachmentThumbnailOptions extends Message<AttachmentThumbnailOptio
 }
 
 /**
- * Request for room-scoped attachment list pages.
- *
- * @generated from message chatto.api.v1.ListRoomAttachmentsRequest
- */
-export class ListRoomAttachmentsRequest extends Message<ListRoomAttachmentsRequest> {
-  /**
-   * Required room ID.
-   *
-   * @generated from field: string room_id = 1;
-   */
-  roomId = "";
-
-  /**
-   * Thumbnail URL options. Defaults are applied when absent.
-   *
-   * @generated from field: chatto.api.v1.AttachmentThumbnailOptions thumbnail = 4;
-   */
-  thumbnail?: AttachmentThumbnailOptions;
-
-  /**
-   * Page request. Defaults are applied when absent or limit is zero.
-   *
-   * @generated from field: chatto.api.v1.PageRequest page = 5;
-   */
-  page?: PageRequest;
-
-  constructor(data?: PartialMessage<ListRoomAttachmentsRequest>) {
-    super();
-    proto3.util.initPartial(data, this);
-  }
-
-  static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.api.v1.ListRoomAttachmentsRequest";
-  static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "room_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 4, name: "thumbnail", kind: "message", T: AttachmentThumbnailOptions },
-    { no: 5, name: "page", kind: "message", T: PageRequest },
-  ]);
-
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRoomAttachmentsRequest {
-    return new ListRoomAttachmentsRequest().fromBinary(bytes, options);
-  }
-
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListRoomAttachmentsRequest {
-    return new ListRoomAttachmentsRequest().fromJson(jsonValue, options);
-  }
-
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListRoomAttachmentsRequest {
-    return new ListRoomAttachmentsRequest().fromJsonString(jsonString, options);
-  }
-
-  static equals(a: ListRoomAttachmentsRequest | PlainMessage<ListRoomAttachmentsRequest> | undefined, b: ListRoomAttachmentsRequest | PlainMessage<ListRoomAttachmentsRequest> | undefined): boolean {
-    return proto3.util.equals(ListRoomAttachmentsRequest, a, b);
-  }
-}
-
-/**
  * One current room attachment and its message anchor.
  *
  * @generated from message chatto.api.v1.RoomAttachmentListItem
@@ -218,112 +160,6 @@ export class RoomAttachmentListItem extends Message<RoomAttachmentListItem> {
 
   static equals(a: RoomAttachmentListItem | PlainMessage<RoomAttachmentListItem> | undefined, b: RoomAttachmentListItem | PlainMessage<RoomAttachmentListItem> | undefined): boolean {
     return proto3.util.equals(RoomAttachmentListItem, a, b);
-  }
-}
-
-/**
- * Room-scoped attachment list response.
- *
- * @generated from message chatto.api.v1.ListRoomAttachmentsResponse
- */
-export class ListRoomAttachmentsResponse extends Message<ListRoomAttachmentsResponse> {
-  /**
-   * Current attachments in newest message order.
-   *
-   * @generated from field: repeated chatto.api.v1.RoomAttachmentListItem items = 1;
-   */
-  items: RoomAttachmentListItem[] = [];
-
-  /**
-   * Page metadata.
-   *
-   * @generated from field: chatto.api.v1.PageInfo page = 4;
-   */
-  page?: PageInfo;
-
-  constructor(data?: PartialMessage<ListRoomAttachmentsResponse>) {
-    super();
-    proto3.util.initPartial(data, this);
-  }
-
-  static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.api.v1.ListRoomAttachmentsResponse";
-  static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "items", kind: "message", T: RoomAttachmentListItem, repeated: true },
-    { no: 4, name: "page", kind: "message", T: PageInfo },
-  ]);
-
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRoomAttachmentsResponse {
-    return new ListRoomAttachmentsResponse().fromBinary(bytes, options);
-  }
-
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListRoomAttachmentsResponse {
-    return new ListRoomAttachmentsResponse().fromJson(jsonValue, options);
-  }
-
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListRoomAttachmentsResponse {
-    return new ListRoomAttachmentsResponse().fromJsonString(jsonString, options);
-  }
-
-  static equals(a: ListRoomAttachmentsResponse | PlainMessage<ListRoomAttachmentsResponse> | undefined, b: ListRoomAttachmentsResponse | PlainMessage<ListRoomAttachmentsResponse> | undefined): boolean {
-    return proto3.util.equals(ListRoomAttachmentsResponse, a, b);
-  }
-}
-
-/**
- * Request to refresh signed attachment URLs for one message.
- *
- * @generated from message chatto.api.v1.RefreshMessageAttachmentUrlsRequest
- */
-export class RefreshMessageAttachmentUrlsRequest extends Message<RefreshMessageAttachmentUrlsRequest> {
-  /**
-   * Required room ID.
-   *
-   * @generated from field: string room_id = 1;
-   */
-  roomId = "";
-
-  /**
-   * Required message event ID.
-   *
-   * @generated from field: string event_id = 2;
-   */
-  eventId = "";
-
-  /**
-   * Thumbnail URL options. Defaults are applied when absent.
-   *
-   * @generated from field: chatto.api.v1.AttachmentThumbnailOptions thumbnail = 3;
-   */
-  thumbnail?: AttachmentThumbnailOptions;
-
-  constructor(data?: PartialMessage<RefreshMessageAttachmentUrlsRequest>) {
-    super();
-    proto3.util.initPartial(data, this);
-  }
-
-  static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.api.v1.RefreshMessageAttachmentUrlsRequest";
-  static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "room_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 2, name: "event_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 3, name: "thumbnail", kind: "message", T: AttachmentThumbnailOptions },
-  ]);
-
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RefreshMessageAttachmentUrlsRequest {
-    return new RefreshMessageAttachmentUrlsRequest().fromBinary(bytes, options);
-  }
-
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RefreshMessageAttachmentUrlsRequest {
-    return new RefreshMessageAttachmentUrlsRequest().fromJson(jsonValue, options);
-  }
-
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RefreshMessageAttachmentUrlsRequest {
-    return new RefreshMessageAttachmentUrlsRequest().fromJsonString(jsonString, options);
-  }
-
-  static equals(a: RefreshMessageAttachmentUrlsRequest | PlainMessage<RefreshMessageAttachmentUrlsRequest> | undefined, b: RefreshMessageAttachmentUrlsRequest | PlainMessage<RefreshMessageAttachmentUrlsRequest> | undefined): boolean {
-    return proto3.util.equals(RefreshMessageAttachmentUrlsRequest, a, b);
   }
 }
 
@@ -397,46 +233,5 @@ export class RefreshedAttachmentUrls extends Message<RefreshedAttachmentUrls> {
 
   static equals(a: RefreshedAttachmentUrls | PlainMessage<RefreshedAttachmentUrls> | undefined, b: RefreshedAttachmentUrls | PlainMessage<RefreshedAttachmentUrls> | undefined): boolean {
     return proto3.util.equals(RefreshedAttachmentUrls, a, b);
-  }
-}
-
-/**
- * Response containing fresh signed URLs for the current message attachments.
- *
- * @generated from message chatto.api.v1.RefreshMessageAttachmentUrlsResponse
- */
-export class RefreshMessageAttachmentUrlsResponse extends Message<RefreshMessageAttachmentUrlsResponse> {
-  /**
-   * Fresh URL bundle for each current attachment on the message.
-   *
-   * @generated from field: repeated chatto.api.v1.RefreshedAttachmentUrls attachments = 1;
-   */
-  attachments: RefreshedAttachmentUrls[] = [];
-
-  constructor(data?: PartialMessage<RefreshMessageAttachmentUrlsResponse>) {
-    super();
-    proto3.util.initPartial(data, this);
-  }
-
-  static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.api.v1.RefreshMessageAttachmentUrlsResponse";
-  static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "attachments", kind: "message", T: RefreshedAttachmentUrls, repeated: true },
-  ]);
-
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RefreshMessageAttachmentUrlsResponse {
-    return new RefreshMessageAttachmentUrlsResponse().fromBinary(bytes, options);
-  }
-
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RefreshMessageAttachmentUrlsResponse {
-    return new RefreshMessageAttachmentUrlsResponse().fromJson(jsonValue, options);
-  }
-
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RefreshMessageAttachmentUrlsResponse {
-    return new RefreshMessageAttachmentUrlsResponse().fromJsonString(jsonString, options);
-  }
-
-  static equals(a: RefreshMessageAttachmentUrlsResponse | PlainMessage<RefreshMessageAttachmentUrlsResponse> | undefined, b: RefreshMessageAttachmentUrlsResponse | PlainMessage<RefreshMessageAttachmentUrlsResponse> | undefined): boolean {
-    return proto3.util.equals(RefreshMessageAttachmentUrlsResponse, a, b);
   }
 }

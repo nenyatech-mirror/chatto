@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { VoiceCallAPI, VoiceCallParticipant } from '@chatto/api-client/voiceCalls';
+import type { VoiceCallAPI, VoiceCallParticipant } from '$lib/api-client/voiceCalls';
 import { ActiveCallRoomsState } from './activeCallRooms.svelte';
 
 function deferred<T>() {
@@ -31,7 +31,9 @@ function participant(
 
 function makeVoiceCallAPI(overrides: Partial<VoiceCallAPI> = {}): VoiceCallAPI {
   return {
-    listActiveCallRoomIds: vi.fn().mockResolvedValue([]),
+    listActiveCalls: vi.fn().mockResolvedValue([]),
+    getActiveCall: vi.fn().mockResolvedValue(null),
+    batchGetActiveCalls: vi.fn().mockResolvedValue([]),
     listCallParticipants: vi.fn().mockResolvedValue([]),
     joinCall: vi.fn().mockResolvedValue(true),
     getCallToken: vi.fn().mockResolvedValue(null),
@@ -187,11 +189,10 @@ describe('ActiveCallRoomsState', () => {
     expect(state.getParticipants('R1')).toEqual([]);
   });
 
-  it('clears a room with an unknown call id when a call end event arrives', async () => {
+  it('clears a list-loaded room when its call end event arrives', async () => {
     const state = new ActiveCallRoomsState(
       makeVoiceCallAPI({
-        listActiveCallRoomIds: vi.fn().mockResolvedValue(['R1']),
-        listCallParticipants: vi.fn().mockResolvedValue([])
+        listActiveCalls: vi.fn().mockResolvedValue([{ roomId: 'R1', callId: 'call-unknown', participants: [] }])
       }),
       { connected: false, roomId: null } as never
     );
@@ -200,10 +201,35 @@ describe('ActiveCallRoomsState', () => {
 
     expect(state.has('R1')).toBe(true);
 
-    state.handleEnd('R1', 'call-1');
+    state.handleEnd('R1', 'call-unknown');
 
     expect(state.has('R1')).toBe(false);
     expect(state.getParticipants('R1')).toEqual([]);
+  });
+
+  it('loads initial active calls through list snapshots', async () => {
+    const listActiveCalls = vi.fn().mockResolvedValue([
+      { roomId: 'R1', callId: 'call-1', participants: [participant('U1')] }
+    ]);
+    const listCallParticipants = vi.fn().mockResolvedValue([participant('U2')]);
+    const state = new ActiveCallRoomsState(
+      makeVoiceCallAPI({ listActiveCalls, listCallParticipants }),
+      { connected: false, roomId: null, participants: [] } as never
+    );
+
+    await state.load();
+
+    expect(listActiveCalls).toHaveBeenCalledTimes(1);
+    expect(listCallParticipants).not.toHaveBeenCalled();
+    expect(state.has('R1')).toBe(true);
+    expect(state.getParticipants('R1')).toEqual([
+      {
+        userId: 'U1',
+        displayName: 'Alice',
+        login: 'alice',
+        avatarUrl: null
+      }
+    ]);
   });
 
   it('ignores stale leave and end events from an older call', () => {

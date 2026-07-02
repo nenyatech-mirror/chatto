@@ -2,8 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { flushSync } from 'svelte';
 import { render } from 'vitest-browser-svelte';
 import { q } from '$lib/test-utils';
-import type { AdminRoomLayoutAPI } from '@chatto/api-client/adminRoomLayout';
-import type { RoomCommandAPI } from '@chatto/api-client/rooms';
+import type { AdminRoomLayoutAPI } from '$lib/api-client/adminRoomLayout';
+import type { RoomDirectoryAPI } from '$lib/api-client/roomDirectory';
+import type { RoomCommandAPI } from '$lib/api-client/rooms';
 import {
   AdminRoomLayoutStore,
   type AdminRoomGroup,
@@ -63,19 +64,18 @@ function group(id: string, rooms: AdminRoomInfo[], name = id): AdminRoomGroup {
 
 function roomAPI(): Pick<
   RoomCommandAPI,
-  'updateRoom' | 'archiveRoom' | 'unarchiveRoom' | 'setRoomUniversal'
+  'updateRoom' | 'archiveRoom' | 'unarchiveRoom' | 'updateRoomUniversal'
 > {
   return {
     updateRoom: vi.fn().mockResolvedValue(null),
     archiveRoom: vi.fn().mockResolvedValue(null),
     unarchiveRoom: vi.fn().mockResolvedValue(null),
-    setRoomUniversal: vi.fn().mockResolvedValue(null)
+    updateRoomUniversal: vi.fn().mockResolvedValue(null)
   };
 }
 
 function makeLayout(): AdminRoomLayoutStore {
   const layoutAPI = {
-    listAdminRoomLayout: vi.fn().mockResolvedValue([]),
     createRoomGroup: vi.fn().mockResolvedValue(null),
     updateRoomGroup: vi.fn().mockResolvedValue(null),
     deleteRoomGroup: vi.fn().mockResolvedValue(true),
@@ -87,7 +87,10 @@ function makeLayout(): AdminRoomLayoutStore {
     deleteSidebarLink: vi.fn().mockResolvedValue(true),
     moveSidebarLinkToGroup: vi.fn().mockResolvedValue(undefined)
   } satisfies AdminRoomLayoutAPI;
-  return new AdminRoomLayoutStore(layoutAPI, roomAPI());
+  const directoryAPI = {
+    listRoomGroups: vi.fn().mockResolvedValue([])
+  } satisfies Pick<RoomDirectoryAPI, 'listRoomGroups'>;
+  return new AdminRoomLayoutStore(layoutAPI, directoryAPI, roomAPI());
 }
 
 function renderEditor(layout: AdminRoomLayoutStore) {
@@ -188,7 +191,7 @@ describe('AdminRoomLayoutEditor', () => {
     layout.initialized = true;
     layout.groups = [group('g1', [room('r1', { name: 'general' })], 'Lobby')];
     const updateRoom = vi.spyOn(layout, 'updateRoom').mockResolvedValue({ ok: true });
-    const setRoomUniversal = vi.spyOn(layout, 'setRoomUniversal').mockResolvedValue({ ok: true });
+    const updateRoomUniversal = vi.spyOn(layout, 'updateRoomUniversal').mockResolvedValue({ ok: true });
     const { container } = renderEditor(layout);
 
     expect(container.querySelector('[title="Make universal room"]')).toBeNull();
@@ -208,7 +211,7 @@ describe('AdminRoomLayoutEditor', () => {
     save.click();
 
     await vi.waitFor(() => {
-      expect(setRoomUniversal).toHaveBeenCalledWith('r1', true);
+      expect(updateRoomUniversal).toHaveBeenCalledWith('r1', true);
     });
     expect(updateRoom).not.toHaveBeenCalled();
   });

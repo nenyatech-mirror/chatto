@@ -4,7 +4,7 @@ description: Room navigation, room group, and room viewer-state RPCs.
 editUrl: false
 ---
 
-{/* Generated from proto/chatto/{api,admin,realtime}/v1/*.proto. Do not edit directly. */}
+{/* Generated from proto/chatto/{auth,discovery,api,admin,realtime}/v1/*.proto. Do not edit directly. */}
 
 Chatto exposes this service below `/api/connect`.
 
@@ -60,8 +60,8 @@ Finite snapshot of rooms visible to the current user.
 ### ListRoomGroups
 
 Lists ordered channel room groups and sidebar items visible to the current
-user as a finite navigation snapshot. Archived and hidden room entries are
-omitted from group results.
+user as a finite navigation snapshot. Hidden room entries are omitted.
+Archived room entries are omitted unless include_archived_rooms is true.
 
 ```http
 POST /api/connect/chatto.api.v1.RoomDirectoryService/ListRoomGroups
@@ -73,6 +73,10 @@ POST /api/connect/chatto.api.v1.RoomDirectoryService/ListRoomGroups
 
 Request for ordered room groups visible to the current user.
 
+| Field | Type | Description |
+| --- | --- | --- |
+| `include_archived_rooms` | `bool` | Include archived room entries. Ordinary sidebar clients should leave this false; management surfaces can set it when they need archived rooms for direct actions such as unarchiving. |
+
 
 <a id="chatto-api-v1-ListRoomGroupsResponse"></a>
 
@@ -83,6 +87,77 @@ Finite snapshot of ordered room groups visible to the current user.
 | Field | Type | Description |
 | --- | --- | --- |
 | `groups` | repeated [`RoomGroup`](/reference/connectrpc-api/types/#chatto-api-v1-RoomGroup) | Channel room groups in sidebar order. |
+
+
+<a id="chatto-api-v1-RoomDirectoryService-GetRoomGroup"></a>
+
+### GetRoomGroup
+
+Returns one ordered room group by ID. Hidden room entries are omitted.
+Archived room entries are omitted unless include_archived_rooms is true.
+Returns NOT_FOUND when the room group does not exist.
+
+```http
+POST /api/connect/chatto.api.v1.RoomDirectoryService/GetRoomGroup
+```
+
+<a id="chatto-api-v1-GetRoomGroupRequest"></a>
+
+#### Input: GetRoomGroupRequest
+
+Request for one ordered room group visible to the current user.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `group_id` | `string` | Required. Room group to resolve. |
+| `include_archived_rooms` | `bool` | Include archived room entries. Ordinary sidebar clients should leave this false; management surfaces can set it when they need archived rooms for direct actions such as unarchiving. |
+
+
+<a id="chatto-api-v1-GetRoomGroupResponse"></a>
+
+#### Result: GetRoomGroupResponse
+
+One ordered room group visible to the current user.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `group` | [`RoomGroup`](/reference/connectrpc-api/types/#chatto-api-v1-RoomGroup) | Resolved room group. Hidden and archived room entries are omitted. |
+
+
+<a id="chatto-api-v1-RoomDirectoryService-BatchGetRoomGroups"></a>
+
+### BatchGetRoomGroups
+
+Returns ordered room groups for a set of stable group IDs. Hidden room
+entries are omitted. Archived room entries are omitted unless
+include_archived_rooms is true. Unknown groups are omitted. Results
+preserve first-seen request order and repeated IDs are de-duplicated.
+
+```http
+POST /api/connect/chatto.api.v1.RoomDirectoryService/BatchGetRoomGroups
+```
+
+<a id="chatto-api-v1-BatchGetRoomGroupsRequest"></a>
+
+#### Input: BatchGetRoomGroupsRequest
+
+Request visible room groups by stable group ID.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `group_ids` | `repeated string` | Required room group IDs. Unknown groups are omitted from the response. |
+| `include_archived_rooms` | `bool` | Include archived room entries. Ordinary sidebar clients should leave this false; management surfaces can set it when they need archived rooms for direct actions such as unarchiving. |
+
+
+<a id="chatto-api-v1-BatchGetRoomGroupsResponse"></a>
+
+#### Result: BatchGetRoomGroupsResponse
+
+Visible room group batch response for direct group hydration.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `groups` | repeated [`RoomGroup`](/reference/connectrpc-api/types/#chatto-api-v1-RoomGroup) | Resolved room groups in first-seen request order. |
 
 
 <a id="chatto-api-v1-RoomDirectoryService-GetRoom"></a>
@@ -117,3 +192,38 @@ Room visible to the current user.
 | Field | Type | Description |
 | --- | --- | --- |
 | `room` | [`DirectoryRoom`](/reference/connectrpc-api/types/#chatto-api-v1-DirectoryRoom) | Resolved room and viewer state. |
+
+
+<a id="chatto-api-v1-RoomDirectoryService-BatchGetRooms"></a>
+
+### BatchGetRooms
+
+Returns visible rooms for a set of stable room IDs. This is a direct
+hydration API, so visible archived rooms may be returned. Unknown rooms and
+rooms hidden from the caller are omitted. Results preserve first-seen
+request order and repeated IDs are de-duplicated.
+
+```http
+POST /api/connect/chatto.api.v1.RoomDirectoryService/BatchGetRooms
+```
+
+<a id="chatto-api-v1-BatchGetRoomsRequest"></a>
+
+#### Input: BatchGetRoomsRequest
+
+Request visible rooms by stable room ID.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `room_ids` | `repeated string` | Required room IDs. Unknown rooms and rooms hidden from the caller are omitted from the response. Archived rooms may be returned when the caller can still refresh them directly. |
+
+
+<a id="chatto-api-v1-BatchGetRoomsResponse"></a>
+
+#### Result: BatchGetRoomsResponse
+
+Visible room batch response for direct room hydration.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `rooms` | repeated [`DirectoryRoom`](/reference/connectrpc-api/types/#chatto-api-v1-DirectoryRoom) | Resolved rooms in first-seen request order. |

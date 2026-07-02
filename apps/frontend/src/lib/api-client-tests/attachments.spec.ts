@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureApiClientHooks } from '@chatto/api-client/hooks';
+import { configureApiClientHooks } from '$lib/api-client/hooks';
 import { Code, ConnectError } from '@connectrpc/connect';
 import { Timestamp } from '@bufbuild/protobuf';
-import { FitMode } from '@chatto/api-client/renderTypes';
+import { FitMode } from '$lib/api-client/renderTypes';
 import {
   AttachmentFitMode,
-  ListRoomAttachmentsResponse,
-  RefreshMessageAttachmentUrlsResponse,
   RefreshedAttachmentUrls,
   RoomAttachmentListItem
 } from '@chatto/api-types/api/v1/attachments_pb';
+import {
+  BatchRefreshMessageAttachmentUrlsResponse,
+  RefreshedMessageAttachmentUrls,
+  RefreshMessageAttachmentUrlsResponse
+} from '@chatto/api-types/api/v1/messages_pb';
+import { ListRoomAttachmentsResponse } from '@chatto/api-types/api/v1/rooms_pb';
 import {
   RoomTimelineAssetUrl,
   RoomTimelineAttachment,
@@ -17,14 +21,15 @@ import {
   RoomTimelineVideoProcessingStatus,
   RoomTimelineVideoVariant
 } from '@chatto/api-types/api/v1/room_timeline_pb';
-import { createAttachmentAPI } from '@chatto/api-client/attachments';
+import { createAttachmentAPI } from '$lib/api-client/attachments';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createConnectTransport: vi.fn(),
   handleAuthenticationRequired: vi.fn(),
   listRoomAttachments: vi.fn(),
-  refreshMessageAttachmentUrls: vi.fn()
+  refreshMessageAttachmentUrls: vi.fn(),
+  batchRefreshMessageAttachmentUrls: vi.fn()
 }));
 
 vi.mock('@connectrpc/connect', async (importOriginal) => {
@@ -55,10 +60,18 @@ describe('createAttachmentAPI', () => {
     configureApiClientHooks({ onAuthenticationRequired: mocks.handleAuthenticationRequired });
     mocks.listRoomAttachments.mockReset();
     mocks.refreshMessageAttachmentUrls.mockReset();
+    mocks.batchRefreshMessageAttachmentUrls.mockReset();
     mocks.createConnectTransport.mockReturnValue({ kind: 'transport' });
-    mocks.createClient.mockReturnValue({
-      listRoomAttachments: mocks.listRoomAttachments,
-      refreshMessageAttachmentUrls: mocks.refreshMessageAttachmentUrls
+    mocks.createClient.mockImplementation((service) => {
+      if (service.typeName === 'chatto.api.v1.RoomService') {
+        return {
+          listRoomAttachments: mocks.listRoomAttachments
+        };
+      }
+      return {
+        refreshMessageAttachmentUrls: mocks.refreshMessageAttachmentUrls,
+        batchRefreshMessageAttachmentUrls: mocks.batchRefreshMessageAttachmentUrls
+      };
     });
   });
 
@@ -66,7 +79,7 @@ describe('createAttachmentAPI', () => {
     mocks.listRoomAttachments.mockResolvedValue(
       new ListRoomAttachmentsResponse({
         page: { totalCount: 2n, hasMore: true },
-        items: [
+        attachments: [
           new RoomAttachmentListItem({
             messageEventId: 'event_2',
             threadRootEventId: 'event_1',
@@ -200,6 +213,58 @@ describe('createAttachmentAPI', () => {
     expect(urls.get('att_1')?.variantAssetUrls.get('720p')?.url).toBe(
       '/assets/files/variant?fresh=1'
     );
+  });
+
+  it('batch refreshes message attachment URLs', async () => {
+    mocks.batchRefreshMessageAttachmentUrls.mockResolvedValue(
+      new BatchRefreshMessageAttachmentUrlsResponse({
+        messages: [
+          new RefreshedMessageAttachmentUrls({
+            eventId: 'event_1',
+            attachments: [
+              new RefreshedAttachmentUrls({
+                attachmentId: 'att_1',
+                assetUrl: assetUrl('/assets/files/att_1?fresh=1'),
+                thumbnailAssetUrl: assetUrl('/assets/files/att_1/image/120x120/cover?fresh=1')
+              })
+            ]
+          }),
+          new RefreshedMessageAttachmentUrls({
+            eventId: 'event_2',
+            attachments: []
+          })
+        ]
+      })
+    );
+
+    const api = createAttachmentAPI({
+      baseUrl: '/api/connect',
+      bearerToken: 'token'
+    });
+
+    const messages = await api.batchRefreshMessageAttachmentUrls(
+      'room_1',
+      ['event_1', 'missing', 'event_2'],
+      {
+        width: 120,
+        height: 120,
+        fit: FitMode.Cover
+      }
+    );
+
+    expect(mocks.batchRefreshMessageAttachmentUrls).toHaveBeenCalledWith(
+      {
+        roomId: 'room_1',
+        eventIds: ['event_1', 'missing', 'event_2'],
+        thumbnail: { width: 120, height: 120, fit: AttachmentFitMode.COVER }
+      },
+      { headers: { Authorization: 'Bearer token' } }
+    );
+    expect(messages.get('event_1')?.get('att_1')?.assetUrl.url).toBe(
+      '/assets/files/att_1?fresh=1'
+    );
+    expect(messages.get('event_2')?.size).toBe(0);
+    expect(messages.has('missing')).toBe(false);
   });
 
   it('notifies the registry when an authenticated server rejects the request', async () => {

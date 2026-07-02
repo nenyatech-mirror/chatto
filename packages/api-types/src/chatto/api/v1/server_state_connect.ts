@@ -7,7 +7,7 @@ import { GetServerStateRequest, GetServerStateResponse } from "./server_state_pb
 import { MethodKind } from "@bufbuild/protobuf";
 
 /**
- * Provides authenticated server state and current user's server capabilities.
+ * Provides authenticated server profile and runtime configuration.
  *
  * @generated from service chatto.api.v1.ServerService
  */
@@ -17,7 +17,7 @@ export const ServerService = {
     /**
      * Returns authenticated server state. This RPC requires a logged-in user;
      * public discovery remains available through
-     * ServerDiscoveryService.GetServer.
+     * chatto.discovery.v1.ServerDiscoveryService.GetServer.
      *
      * @generated from rpc chatto.api.v1.ServerService.GetServerState
      */

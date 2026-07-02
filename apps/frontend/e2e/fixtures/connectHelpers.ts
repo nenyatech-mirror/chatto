@@ -4,6 +4,27 @@ type ConnectRequest = Record<string, unknown>;
 type ConnectClient = Page | APIRequestContext;
 const DEFAULT_POLL_TIMEOUT = process.env.CI ? 10_000 : 3_000;
 
+export type E2EPermissionDecision =
+  | 'PERMISSION_DECISION_ALLOW'
+  | 'PERMISSION_DECISION_DENY'
+  | 'PERMISSION_DECISION_NONE';
+
+export type E2EPermissionScopeKind =
+  | 'PERMISSION_SCOPE_KIND_SERVER'
+  | 'PERMISSION_SCOPE_KIND_GROUP'
+  | 'PERMISSION_SCOPE_KIND_ROOM';
+
+export interface E2EPermissionDecisionUpdateResponse {
+  decision?: {
+    permission?: string;
+    decision?: E2EPermissionDecision;
+    scope?: {
+      kind?: E2EPermissionScopeKind;
+      id?: string;
+    };
+  };
+}
+
 export interface E2EAdminRole {
   role?: {
     name?: string;
@@ -56,11 +77,11 @@ interface JoinRoomResponse {
   room?: { id?: string };
 }
 
-interface PostMessageResponse {
+interface CreateMessageResponse {
   event?: { id?: string };
 }
 
-interface ServerStateResponse {
+interface ViewerResponse {
   viewerState?: { hasUnreadRooms?: boolean };
 }
 
@@ -123,6 +144,27 @@ export function unwrapAdminRole(role: E2EAdminRole | undefined): E2EServerRole |
   };
 }
 
+export function expectPermissionDecisionUpdate(
+  data: E2EPermissionDecisionUpdateResponse,
+  expected: {
+    permission: string;
+    decision: E2EPermissionDecision;
+    scope?: { kind: E2EPermissionScopeKind; id?: string };
+  }
+): void {
+  expect(data.decision).toEqual(
+    expect.objectContaining({
+      permission: expected.permission,
+      decision: expected.decision,
+      ...(expected.scope
+        ? {
+            scope: expect.objectContaining(expected.scope)
+          }
+        : {})
+    })
+  );
+}
+
 export async function getRoomIdByNameViaConnect(
   client: ConnectClient,
   roomName: string
@@ -156,9 +198,9 @@ export async function waitForServerUnreadViaConnect(
   timeout = DEFAULT_POLL_TIMEOUT
 ): Promise<void> {
   await expect(async () => {
-    const data = await connectPost<ServerStateResponse>(
+    const data = await connectPost<ViewerResponse>(
       page,
-      'chatto.api.v1.ServerService/GetServerState'
+      'chatto.api.v1.ViewerService/GetViewer'
     );
     expect(data.viewerState?.hasUnreadRooms ?? false).toBe(expected);
   }).toPass({ timeout, intervals: [100, 250, 500, 1000] });
@@ -315,14 +357,14 @@ export async function postThreadReplyWithEchoViaConnect(
 }
 
 async function postMessageWithConnectInput(page: Page, input: ConnectRequest): Promise<string> {
-  const data = await connectPost<PostMessageResponse>(
+  const data = await connectPost<CreateMessageResponse>(
     page,
-    'chatto.api.v1.MessageService/PostMessage',
+    'chatto.api.v1.MessageService/CreateMessage',
     input
   );
   const eventId = data.event?.id;
   if (!eventId) {
-    throw new Error('PostMessage did not return an event id');
+    throw new Error('CreateMessage did not return an event id');
   }
   return eventId;
 }
@@ -337,13 +379,13 @@ export async function getServerNotificationPreference(
   return normalizeNotificationPreference(data);
 }
 
-export async function setServerNotificationLevel(
+export async function updateServerNotificationPreference(
   page: Page,
   level: E2ENotificationLevel
 ): Promise<E2ENotificationPreference> {
   const data = await connectPost<NotificationPreferenceResponse>(
     page,
-    'chatto.api.v1.NotificationPreferencesService/SetServerNotificationLevel',
+    'chatto.api.v1.NotificationPreferencesService/UpdateServerNotificationPreference',
     { level: notificationLevelToProtoName[level] }
   );
   return normalizeNotificationPreference(data);
@@ -361,14 +403,14 @@ export async function getRoomNotificationPreference(
   return normalizeNotificationPreference(data);
 }
 
-export async function setRoomNotificationLevel(
+export async function updateRoomNotificationPreference(
   page: Page,
   roomId: string,
   level: E2ENotificationLevel
 ): Promise<E2ENotificationPreference> {
   const data = await connectPost<NotificationPreferenceResponse>(
     page,
-    'chatto.api.v1.NotificationPreferencesService/SetRoomNotificationLevel',
+    'chatto.api.v1.NotificationPreferencesService/UpdateRoomNotificationPreference',
     { roomId, level: notificationLevelToProtoName[level] }
   );
   return normalizeNotificationPreference(data);

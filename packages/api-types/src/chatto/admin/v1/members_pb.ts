@@ -280,11 +280,11 @@ export class ListMembersRequest extends Message<ListMembersRequest> {
  */
 export class ListMembersResponse extends Message<ListMembersResponse> {
   /**
-   * Matching users.
+   * Matching members.
    *
-   * @generated from field: repeated chatto.admin.v1.AdminMember users = 1;
+   * @generated from field: repeated chatto.admin.v1.AdminMember members = 1;
    */
-  users: AdminMember[] = [];
+  members: AdminMember[] = [];
 
   /**
    * Public roles for display-name lookup.
@@ -308,7 +308,7 @@ export class ListMembersResponse extends Message<ListMembersResponse> {
   static readonly runtime: typeof proto3 = proto3;
   static readonly typeName = "chatto.admin.v1.ListMembersResponse";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "users", kind: "message", T: AdminMember, repeated: true },
+    { no: 1, name: "members", kind: "message", T: AdminMember, repeated: true },
     { no: 2, name: "roles", kind: "message", T: Role, repeated: true },
     { no: 5, name: "page", kind: "message", T: PageInfo },
   ]);
@@ -337,18 +337,25 @@ export class ListMembersResponse extends Message<ListMembersResponse> {
  */
 export class GetMemberRequest extends Message<GetMemberRequest> {
   /**
-   * Target user ID.
-   *
-   * @generated from field: string user_id = 1;
+   * @generated from oneof chatto.admin.v1.GetMemberRequest.target
    */
-  userId = "";
-
-  /**
-   * Target login. Provide either user_id or login.
-   *
-   * @generated from field: string login = 2;
-   */
-  login = "";
+  target: {
+    /**
+     * Target stable user ID.
+     *
+     * @generated from field: string user_id = 1;
+     */
+    value: string;
+    case: "userId";
+  } | {
+    /**
+     * Target login identifier.
+     *
+     * @generated from field: string login = 2;
+     */
+    value: string;
+    case: "login";
+  } | { case: undefined; value?: undefined } = { case: undefined };
 
   constructor(data?: PartialMessage<GetMemberRequest>) {
     super();
@@ -358,8 +365,8 @@ export class GetMemberRequest extends Message<GetMemberRequest> {
   static readonly runtime: typeof proto3 = proto3;
   static readonly typeName = "chatto.admin.v1.GetMemberRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "user_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 2, name: "login", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 1, name: "user_id", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "target" },
+    { no: 2, name: "login", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "target" },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): GetMemberRequest {
@@ -457,6 +464,97 @@ export class GetMemberResponse extends Message<GetMemberResponse> {
 
   static equals(a: GetMemberResponse | PlainMessage<GetMemberResponse> | undefined, b: GetMemberResponse | PlainMessage<GetMemberResponse> | undefined): boolean {
     return proto3.util.equals(GetMemberResponse, a, b);
+  }
+}
+
+/**
+ * Request server-admin member rows for a set of stable user IDs.
+ *
+ * @generated from message chatto.admin.v1.BatchGetMembersRequest
+ */
+export class BatchGetMembersRequest extends Message<BatchGetMembersRequest> {
+  /**
+   * Required target user IDs. Unknown IDs are omitted from the response.
+   *
+   * @generated from field: repeated string user_ids = 1;
+   */
+  userIds: string[] = [];
+
+  constructor(data?: PartialMessage<BatchGetMembersRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.admin.v1.BatchGetMembersRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "user_ids", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): BatchGetMembersRequest {
+    return new BatchGetMembersRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): BatchGetMembersRequest {
+    return new BatchGetMembersRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): BatchGetMembersRequest {
+    return new BatchGetMembersRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: BatchGetMembersRequest | PlainMessage<BatchGetMembersRequest> | undefined, b: BatchGetMembersRequest | PlainMessage<BatchGetMembersRequest> | undefined): boolean {
+    return proto3.util.equals(BatchGetMembersRequest, a, b);
+  }
+}
+
+/**
+ * Batch server-admin member response.
+ *
+ * @generated from message chatto.admin.v1.BatchGetMembersResponse
+ */
+export class BatchGetMembersResponse extends Message<BatchGetMembersResponse> {
+  /**
+   * Found members. The server preserves first-seen request order and
+   * de-duplicates repeated IDs.
+   *
+   * @generated from field: repeated chatto.admin.v1.AdminMember members = 1;
+   */
+  members: AdminMember[] = [];
+
+  /**
+   * Public roles for display-name lookup.
+   *
+   * @generated from field: repeated chatto.api.v1.Role roles = 2;
+   */
+  roles: Role[] = [];
+
+  constructor(data?: PartialMessage<BatchGetMembersResponse>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "chatto.admin.v1.BatchGetMembersResponse";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "members", kind: "message", T: AdminMember, repeated: true },
+    { no: 2, name: "roles", kind: "message", T: Role, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): BatchGetMembersResponse {
+    return new BatchGetMembersResponse().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): BatchGetMembersResponse {
+    return new BatchGetMembersResponse().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): BatchGetMembersResponse {
+    return new BatchGetMembersResponse().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: BatchGetMembersResponse | PlainMessage<BatchGetMembersResponse> | undefined, b: BatchGetMembersResponse | PlainMessage<BatchGetMembersResponse> | undefined): boolean {
+    return proto3.util.equals(BatchGetMembersResponse, a, b);
   }
 }
 
@@ -670,14 +768,16 @@ export class UpdateUserRequest extends Message<UpdateUserRequest> {
   userId = "";
 
   /**
-   * New display name, when changing it.
+   * New display name, when changing it. Empty clears the explicit display
+   * name. The server also rejects control and confusing invisible characters.
    *
    * @generated from field: optional string display_name = 2;
    */
   displayName?: string;
 
   /**
-   * New login identifier, when changing it.
+   * New login identifier, when changing it. The server accepts ASCII letters,
+   * digits, period, underscore, and hyphen, starting with a letter or digit.
    *
    * @generated from field: optional string login = 3;
    */
@@ -763,11 +863,11 @@ export class UpdateUserResponse extends Message<UpdateUserResponse> {
 }
 
 /**
- * Request to set a user's password as a server-admin action.
+ * Request to update a user's password as a server-admin action.
  *
- * @generated from message chatto.admin.v1.SetUserPasswordRequest
+ * @generated from message chatto.admin.v1.UpdateUserPasswordRequest
  */
-export class SetUserPasswordRequest extends Message<SetUserPasswordRequest> {
+export class UpdateUserPasswordRequest extends Message<UpdateUserPasswordRequest> {
   /**
    * Target user ID.
    *
@@ -783,73 +883,73 @@ export class SetUserPasswordRequest extends Message<SetUserPasswordRequest> {
    */
   password = "";
 
-  constructor(data?: PartialMessage<SetUserPasswordRequest>) {
+  constructor(data?: PartialMessage<UpdateUserPasswordRequest>) {
     super();
     proto3.util.initPartial(data, this);
   }
 
   static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.admin.v1.SetUserPasswordRequest";
+  static readonly typeName = "chatto.admin.v1.UpdateUserPasswordRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "user_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "password", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ]);
 
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SetUserPasswordRequest {
-    return new SetUserPasswordRequest().fromBinary(bytes, options);
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): UpdateUserPasswordRequest {
+    return new UpdateUserPasswordRequest().fromBinary(bytes, options);
   }
 
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SetUserPasswordRequest {
-    return new SetUserPasswordRequest().fromJson(jsonValue, options);
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): UpdateUserPasswordRequest {
+    return new UpdateUserPasswordRequest().fromJson(jsonValue, options);
   }
 
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SetUserPasswordRequest {
-    return new SetUserPasswordRequest().fromJsonString(jsonString, options);
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): UpdateUserPasswordRequest {
+    return new UpdateUserPasswordRequest().fromJsonString(jsonString, options);
   }
 
-  static equals(a: SetUserPasswordRequest | PlainMessage<SetUserPasswordRequest> | undefined, b: SetUserPasswordRequest | PlainMessage<SetUserPasswordRequest> | undefined): boolean {
-    return proto3.util.equals(SetUserPasswordRequest, a, b);
+  static equals(a: UpdateUserPasswordRequest | PlainMessage<UpdateUserPasswordRequest> | undefined, b: UpdateUserPasswordRequest | PlainMessage<UpdateUserPasswordRequest> | undefined): boolean {
+    return proto3.util.equals(UpdateUserPasswordRequest, a, b);
   }
 }
 
 /**
  * Result of an admin password update.
  *
- * @generated from message chatto.admin.v1.SetUserPasswordResponse
+ * @generated from message chatto.admin.v1.UpdateUserPasswordResponse
  */
-export class SetUserPasswordResponse extends Message<SetUserPasswordResponse> {
+export class UpdateUserPasswordResponse extends Message<UpdateUserPasswordResponse> {
   /**
-   * True when the request completed.
+   * Updated admin member row.
    *
-   * @generated from field: bool updated = 1;
+   * @generated from field: chatto.admin.v1.AdminMember member = 1;
    */
-  updated = false;
+  member?: AdminMember;
 
-  constructor(data?: PartialMessage<SetUserPasswordResponse>) {
+  constructor(data?: PartialMessage<UpdateUserPasswordResponse>) {
     super();
     proto3.util.initPartial(data, this);
   }
 
   static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "chatto.admin.v1.SetUserPasswordResponse";
+  static readonly typeName = "chatto.admin.v1.UpdateUserPasswordResponse";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "updated", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 1, name: "member", kind: "message", T: AdminMember },
   ]);
 
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): SetUserPasswordResponse {
-    return new SetUserPasswordResponse().fromBinary(bytes, options);
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): UpdateUserPasswordResponse {
+    return new UpdateUserPasswordResponse().fromBinary(bytes, options);
   }
 
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): SetUserPasswordResponse {
-    return new SetUserPasswordResponse().fromJson(jsonValue, options);
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): UpdateUserPasswordResponse {
+    return new UpdateUserPasswordResponse().fromJson(jsonValue, options);
   }
 
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): SetUserPasswordResponse {
-    return new SetUserPasswordResponse().fromJsonString(jsonString, options);
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): UpdateUserPasswordResponse {
+    return new UpdateUserPasswordResponse().fromJsonString(jsonString, options);
   }
 
-  static equals(a: SetUserPasswordResponse | PlainMessage<SetUserPasswordResponse> | undefined, b: SetUserPasswordResponse | PlainMessage<SetUserPasswordResponse> | undefined): boolean {
-    return proto3.util.equals(SetUserPasswordResponse, a, b);
+  static equals(a: UpdateUserPasswordResponse | PlainMessage<UpdateUserPasswordResponse> | undefined, b: UpdateUserPasswordResponse | PlainMessage<UpdateUserPasswordResponse> | undefined): boolean {
+    return proto3.util.equals(UpdateUserPasswordResponse, a, b);
   }
 }
 

@@ -4,17 +4,20 @@ import {
   deleteServerBanner,
   deleteServerLogo,
   getAuthenticatedServerState,
+  getServerConfig,
   getServerSecurityConfig,
   updateBlockedUsernames,
   updateServerConfig,
   uploadServerBanner,
   uploadServerLogo
-} from '@chatto/api-client/serverState';
+} from '$lib/api-client/serverState';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   createConnectTransport: vi.fn(),
   getServerState: vi.fn(),
+  getViewer: vi.fn(),
+  getServerConfig: vi.fn(),
   updateServerConfig: vi.fn(),
   uploadServerLogo: vi.fn(),
   deleteServerLogo: vi.fn(),
@@ -41,6 +44,8 @@ describe('getAuthenticatedServerState', () => {
     mocks.createClient.mockReset();
     mocks.createConnectTransport.mockReset();
     mocks.getServerState.mockReset();
+    mocks.getViewer.mockReset();
+    mocks.getServerConfig.mockReset();
     mocks.updateServerConfig.mockReset();
     mocks.uploadServerLogo.mockReset();
     mocks.deleteServerLogo.mockReset();
@@ -51,6 +56,8 @@ describe('getAuthenticatedServerState', () => {
     mocks.createConnectTransport.mockReturnValue({ kind: 'transport' });
     mocks.createClient.mockReturnValue({
       getServerState: mocks.getServerState,
+      getViewer: mocks.getViewer,
+      getServerConfig: mocks.getServerConfig,
       updateServerConfig: mocks.updateServerConfig,
       uploadServerLogo: mocks.uploadServerLogo,
       deleteServerLogo: mocks.deleteServerLogo,
@@ -82,7 +89,9 @@ describe('getAuthenticatedServerState', () => {
         maxUploadSize: protoInt64.parse(123),
         maxVideoUploadSize: protoInt64.parse(456),
         messageEditWindowSeconds: 7200
-      },
+      }
+    });
+    mocks.getViewer.mockResolvedValue({
       viewerPermissions: {
         permissions: [
           { permission: 'server.manage', granted: true },
@@ -123,6 +132,10 @@ describe('getAuthenticatedServerState', () => {
       useBinaryFormat: true
     });
     expect(mocks.getServerState).toHaveBeenCalledWith(
+      {},
+      { headers: { Authorization: 'Bearer token' } }
+    );
+    expect(mocks.getViewer).toHaveBeenCalledWith(
       {},
       { headers: { Authorization: 'Bearer token' } }
     );
@@ -199,6 +212,7 @@ describe('getAuthenticatedServerState', () => {
         messageEditWindowSeconds: 10800
       }
     });
+    mocks.getViewer.mockResolvedValue({});
 
     const state = await getAuthenticatedServerState({
       baseUrl: '/api/connect',
@@ -206,6 +220,7 @@ describe('getAuthenticatedServerState', () => {
     });
 
     expect(mocks.getServerState).toHaveBeenCalledWith({}, { headers: undefined });
+    expect(mocks.getViewer).toHaveBeenCalledWith({}, { headers: undefined });
     expect(state.name).toBe('Chatto');
     expect(state.version).toBe('');
     expect(state.logoUrl).toBeNull();
@@ -272,6 +287,34 @@ describe('getAuthenticatedServerState', () => {
       logoUrl: 'https://cdn/logo.webp',
       bannerUrl: 'https://cdn/banner.webp'
     });
+  });
+
+  it('loads editable server config through AdminServerService', async () => {
+    mocks.getServerConfig.mockResolvedValue({
+      config: {
+        serverName: 'Connect Server',
+        description: 'Connect description',
+        motd: 'Connect MOTD',
+        welcomeMessage: 'Connect welcome'
+      }
+    });
+
+    const config = {
+      baseUrl: 'https://chat.example.test/api/connect',
+      bearerToken: 'token'
+    };
+
+    await expect(getServerConfig(config)).resolves.toEqual({
+      name: 'Connect Server',
+      description: 'Connect description',
+      motd: 'Connect MOTD',
+      welcomeMessage: 'Connect welcome'
+    });
+
+    expect(mocks.getServerConfig).toHaveBeenCalledWith(
+      {},
+      { headers: { Authorization: 'Bearer token' } }
+    );
   });
 
   it('updates server branding through AdminServerService', async () => {
@@ -354,10 +397,10 @@ describe('getAuthenticatedServerState', () => {
 
   it('loads and updates security config through AdminServerService', async () => {
     mocks.getServerSecurityConfig.mockResolvedValue({
-      blockedUsernames: 'root\nadmin'
+      blockedUsernames: ['root', 'admin']
     });
     mocks.updateBlockedUsernames.mockResolvedValue({
-      blockedUsernames: 'root\nadmin\nreserved'
+      blockedUsernames: ['root', 'admin', 'reserved']
     });
 
     const config = {
@@ -377,7 +420,7 @@ describe('getAuthenticatedServerState', () => {
       { headers: { Authorization: 'Bearer token' } }
     );
     expect(mocks.updateBlockedUsernames).toHaveBeenCalledWith(
-      { blockedUsernames: 'root\nadmin\nreserved' },
+      { blockedUsernames: ['root', 'admin', 'reserved'] },
       { headers: { Authorization: 'Bearer token' } }
     );
   });

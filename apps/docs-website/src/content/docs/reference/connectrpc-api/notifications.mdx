@@ -4,7 +4,7 @@ description: Notification listing, counts, checks, and dismissal RPCs.
 editUrl: false
 ---
 
-{/* Generated from proto/chatto/{api,admin,realtime}/v1/*.proto. Do not edit directly. */}
+{/* Generated from proto/chatto/{auth,discovery,api,admin,realtime}/v1/*.proto. Do not edit directly. */}
 
 Chatto exposes this service below `/api/connect`.
 
@@ -49,9 +49,76 @@ Pending notification page.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `items` | repeated [`NotificationItem`](/reference/connectrpc-api/types/#chatto-api-v1-NotificationItem) | Page items, newest first. |
+| `notifications` | repeated [`NotificationItem`](/reference/connectrpc-api/types/#chatto-api-v1-NotificationItem) | Page notifications, newest first. |
 | `server_name` | `string` | Current server display name for non-DM location labels. |
 | `page` | [`PageInfo`](/reference/connectrpc-api/types/#chatto-api-v1-PageInfo) | Page metadata. |
+
+
+<a id="chatto-api-v1-NotificationService-GetNotification"></a>
+
+### GetNotification
+
+Gets one pending notification. Returns NOT_FOUND when the notification is
+unknown or has been dismissed.
+
+```http
+POST /api/connect/chatto.api.v1.NotificationService/GetNotification
+```
+
+<a id="chatto-api-v1-GetNotificationRequest"></a>
+
+#### Input: GetNotificationRequest
+
+Request one pending notification for the authenticated viewer.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `notification_id` | `string` | Required notification ID. |
+
+
+<a id="chatto-api-v1-GetNotificationResponse"></a>
+
+#### Result: GetNotificationResponse
+
+Pending notification response.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `notification` | [`NotificationItem`](/reference/connectrpc-api/types/#chatto-api-v1-NotificationItem) | Requested notification. |
+| `server_name` | `string` | Current server display name for non-DM location labels. |
+
+
+<a id="chatto-api-v1-NotificationService-BatchGetNotifications"></a>
+
+### BatchGetNotifications
+
+Gets pending notifications by ID.
+
+```http
+POST /api/connect/chatto.api.v1.NotificationService/BatchGetNotifications
+```
+
+<a id="chatto-api-v1-BatchGetNotificationsRequest"></a>
+
+#### Input: BatchGetNotificationsRequest
+
+Request pending notifications for a set of stable notification IDs.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `notification_ids` | `repeated string` | Required notification IDs. Unknown or dismissed IDs are omitted from the response. |
+
+
+<a id="chatto-api-v1-BatchGetNotificationsResponse"></a>
+
+#### Result: BatchGetNotificationsResponse
+
+Batch pending notification response.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `notifications` | repeated [`NotificationItem`](/reference/connectrpc-api/types/#chatto-api-v1-NotificationItem) | Found notifications. The server preserves first-seen request order and de-duplicates repeated IDs. |
+| `server_name` | `string` | Current server display name for non-DM location labels. |
 
 
 <a id="chatto-api-v1-NotificationService-ListRoomNotifications"></a>
@@ -84,31 +151,31 @@ Pending notification page scoped to one room.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `items` | repeated [`NotificationItem`](/reference/connectrpc-api/types/#chatto-api-v1-NotificationItem) | Page items, newest first. |
+| `notifications` | repeated [`NotificationItem`](/reference/connectrpc-api/types/#chatto-api-v1-NotificationItem) | Page notifications, newest first. |
 | `server_name` | `string` | Current server display name for non-DM location labels. |
 | `page` | [`PageInfo`](/reference/connectrpc-api/types/#chatto-api-v1-PageInfo) | Page metadata. |
 
 
-<a id="chatto-api-v1-NotificationService-ListNotificationCounts"></a>
+<a id="chatto-api-v1-NotificationService-ListRoomNotificationCounts"></a>
 
-### ListNotificationCounts
+### ListRoomNotificationCounts
 
 Lists pending notification counts grouped by room as a finite snapshot.
 
 ```http
-POST /api/connect/chatto.api.v1.NotificationService/ListNotificationCounts
+POST /api/connect/chatto.api.v1.NotificationService/ListRoomNotificationCounts
 ```
 
-<a id="chatto-api-v1-ListNotificationCountsRequest"></a>
+<a id="chatto-api-v1-ListRoomNotificationCountsRequest"></a>
 
-#### Input: ListNotificationCountsRequest
+#### Input: ListRoomNotificationCountsRequest
 
 Request for pending notification counts grouped by room.
 
 
-<a id="chatto-api-v1-ListNotificationCountsResponse"></a>
+<a id="chatto-api-v1-ListRoomNotificationCountsResponse"></a>
 
-#### Result: ListNotificationCountsResponse
+#### Result: ListRoomNotificationCountsResponse
 
 Finite snapshot of pending notification counts grouped by room.
 

@@ -1,4 +1,4 @@
-import { createPresenceAPI, APIPresenceStatus, type PresenceAPIConfig } from '@chatto/api-client/presence';
+import { createPresenceAPI, APIPresenceStatus, type PresenceAPIConfig } from '$lib/api-client/presence';
 import { PresenceStatus } from '$lib/render/types';
 import { presencePreference, type PresenceMode } from '$lib/state/presencePreference.svelte';
 
@@ -120,7 +120,7 @@ export function initPresenceTracking(
 	function sendPresenceReport(status: PresenceStatus, userSelected: boolean, revision: number) {
 		for (const config of getReporters()) {
 			createPresenceAPI(config)
-				.reportPresence(presenceStatusToAPIStatus(status), userSelected)
+				.updatePresence(presenceStatusToAPIStatus(status), userSelected)
 				.then((accepted) => applyAcceptedStatus(accepted, revision))
 				.catch(() => {});
 		}

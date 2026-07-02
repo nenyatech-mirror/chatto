@@ -9,7 +9,7 @@
     createAdminUserManagementAPI,
     type AdminMember,
     type AdminMemberRole
-  } from '@chatto/api-client/adminUsers';
+  } from '$lib/api-client/adminUsers';
   import { getServerPermissions } from '$lib/state/server/permissions.svelte';
   import { CopyId, Panel } from '$lib/components/admin';
   import { UserPermissionsMatrix } from '$lib/components/rbac';
@@ -207,17 +207,18 @@
 
     settingPassword = true;
     passwordError = null;
-    let updated = false;
+    let updatedMember: AdminMember | null = null;
     try {
-      updated = await adminUsersAPI().setUserPassword(member.id, adminPassword);
+      updatedMember = await adminUsersAPI().updateUserPassword(member.id, adminPassword);
     } catch (err) {
       passwordError = err instanceof Error ? err.message : m['admin.members.set_password_failed']();
     }
     settingPassword = false;
 
-    if (!updated) {
+    if (!updatedMember) {
       return;
     }
+    member = updatedMember;
     adminPassword = '';
     adminConfirmPassword = '';
     toast.success(m['admin.members.password_set']());
@@ -286,18 +287,22 @@
     error = null;
 
     try {
-      const changed = currentlyHas
+      const result = currentlyHas
         ? await adminUsersAPI().revokeRole(member.id, roleName)
         : await adminUsersAPI().assignRole(member.id, roleName);
-      if (changed) {
+      if (result.changed) {
         const displayName = getRoleDisplayName(roleName);
         if (currentlyHas) {
           toast.success(m['admin.members.removed_role']({ role: displayName }));
         } else {
           toast.success(m['admin.members.assigned_role']({ role: displayName }));
         }
-        // Reload to get updated state
-        await loadData();
+        if (result.member) {
+          member = result.member;
+          memberServerRoles = result.member.roles;
+        } else {
+          await loadData();
+        }
       }
     } catch (err) {
       error = err instanceof Error ? err.message : m['admin.members.role_update_failed']();

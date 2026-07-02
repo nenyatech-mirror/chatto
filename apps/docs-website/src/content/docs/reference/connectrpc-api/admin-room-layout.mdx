@@ -4,7 +4,7 @@ description: Room group, sidebar layout, and sidebar link administration RPCs.
 editUrl: false
 ---
 
-{/* Generated from proto/chatto/{api,admin,realtime}/v1/*.proto. Do not edit directly. */}
+{/* Generated from proto/chatto/{auth,discovery,api,admin,realtime}/v1/*.proto. Do not edit directly. */}
 
 Chatto exposes this service below `/api/connect`.
 
@@ -18,36 +18,8 @@ Shared message and enum definitions are documented in [Shared Types And Enums](/
 
 ## AdminRoomLayoutService
 
-Reads authenticated channel layout data and mutates the server-admin layout.
-
-<a id="chatto-admin-v1-AdminRoomLayoutService-ListAdminRoomLayout"></a>
-
-### ListAdminRoomLayout
-
-Lists the current room groups, rooms, and sidebar links for the admin
-layout editor and sidebar rendering. Requires an authenticated user.
-
-```http
-POST /api/connect/chatto.admin.v1.AdminRoomLayoutService/ListAdminRoomLayout
-```
-
-<a id="chatto-admin-v1-ListAdminRoomLayoutRequest"></a>
-
-#### Input: ListAdminRoomLayoutRequest
-
-Request to read the admin room layout.
-
-
-<a id="chatto-admin-v1-ListAdminRoomLayoutResponse"></a>
-
-#### Result: ListAdminRoomLayoutResponse
-
-Finite snapshot of the current room layout.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `groups` | repeated [`AdminRoomLayoutGroup`](/reference/connectrpc-api/types/#chatto-admin-v1-AdminRoomLayoutGroup) | Room groups in sidebar order. |
-
+Mutates the server-admin room layout. Read current room-group layout through
+chatto.api.v1.RoomDirectoryService.
 
 <a id="chatto-admin-v1-AdminRoomLayoutService-CreateRoomGroup"></a>
 
@@ -101,8 +73,8 @@ Request to update a room group.
 | Field | Type | Description |
 | --- | --- | --- |
 | `group_id` | `string` | Required room group ID. |
-| `name` | `string` | Required group display name. |
-| `description` | `string` | Optional public group description. |
+| `name` | `optional string` | New group display name, when changing it. |
+| `description` | `optional string` | New public group description, when changing it. Empty clears the description. |
 
 
 <a id="chatto-admin-v1-UpdateRoomGroupResponse"></a>
@@ -211,7 +183,7 @@ Result of moving a channel room.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `room` | `chatto.api.v1.Room` | Moved room after the operation. |
+| `room` | [`chatto.api.v1.Room`](/reference/connectrpc-api/types/#chatto-api-v1-Room) | Moved room after the operation. |
 
 
 <a id="chatto-admin-v1-AdminRoomLayoutService-ReorderSidebarItemsInGroup"></a>
@@ -279,7 +251,7 @@ Result of creating a sidebar link.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `sidebar_link` | `chatto.api.v1.SidebarLink` | Created sidebar link. |
+| `sidebar_link` | [`chatto.api.v1.SidebarLink`](/reference/connectrpc-api/types/#chatto-api-v1-SidebarLink) | Created sidebar link. |
 
 
 <a id="chatto-admin-v1-AdminRoomLayoutService-UpdateSidebarLink"></a>
@@ -301,8 +273,8 @@ Request to update a sidebar link.
 | Field | Type | Description |
 | --- | --- | --- |
 | `link_id` | `string` | Required sidebar link ID. |
-| `label` | `string` | Required display label. |
-| `url` | `string` | Required absolute http(s) URL or server-local path. |
+| `label` | `optional string` | New display label, when changing it. |
+| `url` | `optional string` | New absolute http(s) URL or server-local path, when changing it. |
 
 
 <a id="chatto-admin-v1-UpdateSidebarLinkResponse"></a>
@@ -313,7 +285,7 @@ Result of updating a sidebar link.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `sidebar_link` | `chatto.api.v1.SidebarLink` | Updated sidebar link. |
+| `sidebar_link` | [`chatto.api.v1.SidebarLink`](/reference/connectrpc-api/types/#chatto-api-v1-SidebarLink) | Updated sidebar link. |
 
 
 <a id="chatto-admin-v1-AdminRoomLayoutService-DeleteSidebarLink"></a>
@@ -379,4 +351,4 @@ Result of moving a sidebar link.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `sidebar_link` | `chatto.api.v1.SidebarLink` | Moved sidebar link. |
+| `sidebar_link` | [`chatto.api.v1.SidebarLink`](/reference/connectrpc-api/types/#chatto-api-v1-SidebarLink) | Moved sidebar link. |

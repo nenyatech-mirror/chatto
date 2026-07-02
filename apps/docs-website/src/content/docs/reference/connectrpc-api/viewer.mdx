@@ -4,7 +4,7 @@ description: Authenticated viewer profile, preferences, and capability RPCs.
 editUrl: false
 ---
 
-{/* Generated from proto/chatto/{api,admin,realtime}/v1/*.proto. Do not edit directly. */}
+{/* Generated from proto/chatto/{auth,discovery,api,admin,realtime}/v1/*.proto. Do not edit directly. */}
 
 Chatto exposes this service below `/api/connect`.
 
@@ -50,3 +50,5 @@ Authenticated viewer snapshot needed by application shells.
 | `capabilities` | [`ViewerCapabilities`](/reference/connectrpc-api/types/#chatto-api-v1-ViewerCapabilities) | Permission-derived capabilities. |
 | `server_notification_preference` | [`ServerNotificationPreference`](/reference/connectrpc-api/types/#chatto-api-v1-ServerNotificationPreference) | Server-wide notification preference. |
 | `room_notification_preferences` | repeated [`RoomNotificationPreference`](/reference/connectrpc-api/types/#chatto-api-v1-RoomNotificationPreference) | Notification preferences for rooms the user participates in. |
+| `viewer_permissions` | [`ServerViewerPermissions`](/reference/connectrpc-api/types/#chatto-api-v1-ServerViewerPermissions) | Effective server/channel permission decisions for the authenticated user. |
+| `viewer_state` | [`ServerViewerState`](/reference/connectrpc-api/types/#chatto-api-v1-ServerViewerState) | Non-permission server state for the authenticated user. |

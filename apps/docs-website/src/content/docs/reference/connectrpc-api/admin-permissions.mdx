@@ -4,7 +4,7 @@ description: Permission matrix, explanation, and override administration RPCs.
 editUrl: false
 ---
 
-{/* Generated from proto/chatto/{api,admin,realtime}/v1/*.proto. Do not edit directly. */}
+{/* Generated from proto/chatto/{auth,discovery,api,admin,realtime}/v1/*.proto. Do not edit directly. */}
 
 Chatto exposes this service below `/api/connect`.
 
@@ -253,7 +253,7 @@ Result of setting one role permission state.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `ok` | `bool` | True when the request completed. |
+| `decision` | [`PermissionDecisionUpdate`](/reference/connectrpc-api/types/#chatto-admin-v1-PermissionDecisionUpdate) | Updated permission decision for the requested role/scope cell. |
 
 
 <a id="chatto-admin-v1-AdminPermissionService-SetUserPermission"></a>
@@ -288,4 +288,4 @@ Result of setting one user permission state.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `ok` | `bool` | True when the request completed. |
+| `decision` | [`PermissionDecisionUpdate`](/reference/connectrpc-api/types/#chatto-admin-v1-PermissionDecisionUpdate) | Updated permission decision for the requested user/scope cell. |

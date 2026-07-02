@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { VoiceCallAPI, VoiceCallParticipant } from '@chatto/api-client/voiceCalls';
+import type { VoiceCallAPI, VoiceCallParticipant } from '$lib/api-client/voiceCalls';
 import { CallParticipantsState } from './callParticipants.svelte';
 
 function deferred<T>() {
@@ -31,7 +31,9 @@ function participant(
 
 function makeVoiceCallAPI(overrides: Partial<VoiceCallAPI> = {}): VoiceCallAPI {
   return {
-    listActiveCallRoomIds: vi.fn().mockResolvedValue([]),
+    listActiveCalls: vi.fn().mockResolvedValue([]),
+    getActiveCall: vi.fn().mockResolvedValue(null),
+    batchGetActiveCalls: vi.fn().mockResolvedValue([]),
     listCallParticipants: vi.fn().mockResolvedValue([]),
     joinCall: vi.fn().mockResolvedValue(true),
     getCallToken: vi.fn().mockResolvedValue(null),

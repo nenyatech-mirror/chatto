@@ -3,11 +3,13 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { DeleteAttachmentRequest, DeleteAttachmentResponse, DeleteLinkPreviewRequest, DeleteLinkPreviewResponse, DeleteMessageRequest, DeleteMessageResponse, PostMessageRequest, PostMessageResponse, SendTypingIndicatorRequest, SendTypingIndicatorResponse, UpdateMessageRequest, UpdateMessageResponse } from "./messages_pb.js";
+import { BatchRefreshMessageAttachmentUrlsRequest, BatchRefreshMessageAttachmentUrlsResponse, CreateMessageRequest, CreateMessageResponse, DeleteAttachmentRequest, DeleteAttachmentResponse, DeleteLinkPreviewRequest, DeleteLinkPreviewResponse, DeleteMessageRequest, DeleteMessageResponse, RefreshMessageAttachmentUrlsRequest, RefreshMessageAttachmentUrlsResponse, UpdateMessageRequest, UpdateMessageResponse } from "./messages_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
+import { ResolveMessageLinkTargetRequest, ResolveMessageLinkTargetResponse } from "./room_timeline_pb.js";
+import { AddReactionRequest, AddReactionResponse, RemoveReactionRequest, RemoveReactionResponse } from "./reactions_pb.js";
 
 /**
- * Posts messages into room and thread timelines.
+ * Creates messages in room and thread timelines.
  *
  * @generated from service chatto.api.v1.MessageService
  */
@@ -15,17 +17,17 @@ export const MessageService = {
   typeName: "chatto.api.v1.MessageService",
   methods: {
     /**
-     * Posts a message for the current user. The user must be a room member and
+     * Creates a message for the current user. The user must be a room member and
      * must have message.post for room messages or message.post-in-thread for
      * thread replies. Echoing a thread reply also requires message.echo and
      * message.post.
      *
-     * @generated from rpc chatto.api.v1.MessageService.PostMessage
+     * @generated from rpc chatto.api.v1.MessageService.CreateMessage
      */
-    postMessage: {
-      name: "PostMessage",
-      I: PostMessageRequest,
-      O: PostMessageResponse,
+    createMessage: {
+      name: "CreateMessage",
+      I: CreateMessageRequest,
+      O: CreateMessageResponse,
       kind: MethodKind.Unary,
     },
     /**
@@ -76,15 +78,72 @@ export const MessageService = {
       kind: MethodKind.Unary,
     },
     /**
-     * Publishes a live-only typing indicator. Room membership is required; message
-     * posting permission is not.
+     * Refreshes signed URLs for the current attachments on one message.
+     * Authentication and room membership are required. Returns NOT_FOUND when the
+     * message does not exist, is not a current visible message, or belongs to a
+     * different room. Returns an empty attachment list when the message exists
+     * but currently has no attachments.
      *
-     * @generated from rpc chatto.api.v1.MessageService.SendTypingIndicator
+     * @generated from rpc chatto.api.v1.MessageService.RefreshMessageAttachmentUrls
      */
-    sendTypingIndicator: {
-      name: "SendTypingIndicator",
-      I: SendTypingIndicatorRequest,
-      O: SendTypingIndicatorResponse,
+    refreshMessageAttachmentUrls: {
+      name: "RefreshMessageAttachmentUrls",
+      I: RefreshMessageAttachmentUrlsRequest,
+      O: RefreshMessageAttachmentUrlsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Refreshes signed URLs for the current attachments on multiple messages in
+     * one room. Authentication and room membership are required. Missing,
+     * retracted, non-message, and wrong-room event IDs are omitted. Results
+     * preserve first-seen request order and repeated event IDs are de-duplicated.
+     * Existing visible messages with no current attachments are returned with an
+     * empty attachment list.
+     *
+     * @generated from rpc chatto.api.v1.MessageService.BatchRefreshMessageAttachmentUrls
+     */
+    batchRefreshMessageAttachmentUrls: {
+      name: "BatchRefreshMessageAttachmentUrls",
+      I: BatchRefreshMessageAttachmentUrlsRequest,
+      O: BatchRefreshMessageAttachmentUrlsResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Resolves a permalink target to either the room timeline or a message
+     * thread, including thread-only replies that are not room timeline rows.
+     * Returns NOT_FOUND when the target message is missing or hidden and
+     * PERMISSION_DENIED when the room is inaccessible.
+     *
+     * @generated from rpc chatto.api.v1.MessageService.ResolveMessageLinkTarget
+     */
+    resolveMessageLinkTarget: {
+      name: "ResolveMessageLinkTarget",
+      I: ResolveMessageLinkTargetRequest,
+      O: ResolveMessageLinkTargetResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Adds a reaction to a message. The user must be a room member and have
+     * message.react in the target room.
+     *
+     * @generated from rpc chatto.api.v1.MessageService.AddReaction
+     */
+    addReaction: {
+      name: "AddReaction",
+      I: AddReactionRequest,
+      O: AddReactionResponse,
+      kind: MethodKind.Unary,
+    },
+    /**
+     * Removes a reaction from a message. The user must be a room member and have
+     * message.react in the target room.
+     *
+     * @generated from rpc chatto.api.v1.MessageService.RemoveReaction
+     */
+    removeReaction: {
+      name: "RemoveReaction",
+      I: RemoveReactionRequest,
+      O: RemoveReactionResponse,
       kind: MethodKind.Unary,
     },
   }

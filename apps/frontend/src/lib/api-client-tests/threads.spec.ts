@@ -1,7 +1,7 @@
 import { Code, ConnectError } from '@connectrpc/connect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { configureApiClientHooks } from '@chatto/api-client/hooks';
-import { createThreadAPI } from '@chatto/api-client/threads';
+import { configureApiClientHooks } from '$lib/api-client/hooks';
+import { createThreadAPI } from '$lib/api-client/threads';
 
 const mocks = vi.hoisted(() => ({
   createClient: vi.fn(),
@@ -91,14 +91,17 @@ describe('createThreadAPI', () => {
   });
 
   it('follows a thread with bearer auth', async () => {
-    mocks.followThread.mockResolvedValue({ following: true });
+    mocks.followThread.mockResolvedValue({
+      following: true,
+      state: { roomId: 'room-1', threadRootEventId: 'root-1', following: true }
+    });
 
     const api = createThreadAPI({
       serverId: 'remote',
       baseUrl: 'https://remote.example.test/api/connect',
       bearerToken: 'remote-token'
     });
-    const following = await api.followThread({
+    const result = await api.followThread({
       roomId: 'room-1',
       threadRootEventId: 'root-1'
     });
@@ -116,17 +119,23 @@ describe('createThreadAPI', () => {
         headers: { Authorization: 'Bearer remote-token' }
       }
     );
-    expect(following).toBe(true);
+    expect(result).toEqual({
+      following: true,
+      state: { roomId: 'room-1', threadRootEventId: 'root-1', following: true }
+    });
   });
 
   it('unfollows a thread without auth headers when no token is available', async () => {
-    mocks.unfollowThread.mockResolvedValue({ following: false });
+    mocks.unfollowThread.mockResolvedValue({
+      following: false,
+      state: { roomId: 'room-1', threadRootEventId: 'root-1', following: false }
+    });
 
     const api = createThreadAPI({
       baseUrl: 'https://remote.example.test/api/connect',
       bearerToken: null
     });
-    const following = await api.unfollowThread({
+    const result = await api.unfollowThread({
       roomId: 'room-1',
       threadRootEventId: 'root-1'
     });
@@ -140,7 +149,10 @@ describe('createThreadAPI', () => {
         headers: undefined
       }
     );
-    expect(following).toBe(false);
+    expect(result).toEqual({
+      following: false,
+      state: { roomId: 'room-1', threadRootEventId: 'root-1', following: false }
+    });
   });
 
   it('marks the server authentication stale on unauthenticated Connect errors', async () => {
