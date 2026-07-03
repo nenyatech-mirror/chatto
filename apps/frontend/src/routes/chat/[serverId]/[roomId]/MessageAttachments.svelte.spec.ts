@@ -1,17 +1,23 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'vitest-browser-svelte';
 import MessageAttachments from './MessageAttachments.svelte';
 import type { MessageAttachmentView } from '$lib/render/types';
+import type { RefreshedAttachmentUrls } from '$lib/attachments/attachmentUrls';
+
+const attachmentMocks = vi.hoisted(() => ({
+  pushState: vi.fn(),
+  refreshMessageAttachmentUrls: vi.fn()
+}));
 
 vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
-  pushState: vi.fn(),
+  pushState: attachmentMocks.pushState,
   replaceState: vi.fn()
 }));
 
 vi.mock('$lib/api-client/attachments', () => ({
   createAttachmentAPI: vi.fn(() => ({
-    refreshMessageAttachmentUrls: vi.fn().mockResolvedValue(new Map())
+    refreshMessageAttachmentUrls: attachmentMocks.refreshMessageAttachmentUrls
   }))
 }));
 
@@ -24,6 +30,15 @@ vi.mock('$lib/state/server/connection.svelte', () => ({
 }));
 
 const transparentGif = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+
+function emptyRefreshedUrls(): RefreshedAttachmentUrls {
+  return {
+    assetUrl: null,
+    thumbnailAssetUrl: null,
+    videoThumbnailAssetUrl: null,
+    variantAssetUrls: new Map()
+  };
+}
 
 function imageAttachment(overrides: Partial<MessageAttachmentView>): MessageAttachmentView {
   return {
@@ -93,6 +108,12 @@ function imageFrame(container: HTMLElement, filename: string) {
 }
 
 describe('MessageAttachments', () => {
+  beforeEach(() => {
+    attachmentMocks.pushState.mockReset();
+    attachmentMocks.refreshMessageAttachmentUrls.mockReset();
+    attachmentMocks.refreshMessageAttachmentUrls.mockResolvedValue(new Map());
+  });
+
   it('renders very tall portrait images as contained narrow strips', () => {
     const { container } = renderAttachment(
       imageAttachment({
@@ -157,14 +178,74 @@ describe('MessageAttachments', () => {
       { canDeleteAttachment: true }
     );
 
-    const deleteControl = container.querySelector<HTMLElement>(
-      '[aria-label="Delete attachment"]'
-    );
+    const deleteControl = container.querySelector<HTMLElement>('[aria-label="Delete attachment"]');
 
     expect(deleteControl).not.toBeNull();
     expect(deleteControl!.getAttribute('title')).toBe('Delete attachment');
     expect(deleteControl!.className).toContain('attachment-remove-button');
     expect(deleteControl!.className).not.toContain('embed-control-button');
+  });
+
+  it('does not render empty media URLs for attachments that are missing asset URLs', () => {
+    const { container } = renderAttachment(
+      imageAttachment({
+        filename: 'pending.jpg',
+        assetUrl: null,
+        thumbnailAssetUrl: null
+      })
+    );
+
+    expect(container.querySelector('img[src=""]')).toBeNull();
+    expect(container.querySelector('video[src=""]')).toBeNull();
+    expect(container.querySelector('audio[src=""]')).toBeNull();
+    expect(container.querySelector('img[alt="pending.jpg"]')).toBeNull();
+  });
+
+  it('clears stale image URLs when refresh returns null asset URLs', async () => {
+    attachmentMocks.refreshMessageAttachmentUrls.mockResolvedValue(
+      new Map([['att_1', emptyRefreshedUrls()]])
+    );
+    const { container } = renderAttachment(
+      imageAttachment({
+        filename: 'expired.jpg',
+        thumbnailAssetUrl: null
+      })
+    );
+
+    const image = container.querySelector<HTMLImageElement>('img[alt="expired.jpg"]');
+    expect(image).not.toBeNull();
+    image!.dispatchEvent(new Event('error'));
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('img[alt="expired.jpg"]')).toBeNull();
+    });
+  });
+
+  it('does not open a different gallery image when the clicked image URL is cleared', async () => {
+    attachmentMocks.refreshMessageAttachmentUrls.mockResolvedValue(
+      new Map([['cleared', emptyRefreshedUrls()]])
+    );
+    const { container } = renderAttachments([
+      imageAttachment({
+        id: 'cleared',
+        filename: 'cleared.jpg'
+      }),
+      imageAttachment({
+        id: 'kept',
+        filename: 'kept.jpg'
+      })
+    ]);
+
+    const { button } = imageFrame(container, 'cleared.jpg');
+    button.click();
+
+    await vi.waitFor(() => {
+      expect(attachmentMocks.refreshMessageAttachmentUrls).toHaveBeenCalled();
+    });
+    await vi.waitFor(() => {
+      expect(container.querySelector('img[alt="cleared.jpg"]')).toBeNull();
+    });
+    expect(attachmentMocks.pushState).not.toHaveBeenCalled();
   });
 
   it('renders multiple images inside a horizontal gallery with equal-height frames', () => {
