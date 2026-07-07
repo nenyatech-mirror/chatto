@@ -30,6 +30,7 @@ const (
 	pushRecordSize                       uint32 = 2048
 	maxPushProviderResponseBodyBytes            = 2048
 	truncatedPushProviderResponseBodyMsg        = "…"
+	declarativeWebPushValue                     = 8030
 )
 
 // NewSender creates a new push notification sender.
@@ -53,8 +54,74 @@ type Payload struct {
 	Tag            string `json:"tag,omitempty"`
 	NotificationID string `json:"notificationId,omitempty"`
 	URL            string `json:"url,omitempty"`
+	AppBadge       string `json:"-"`
 	// Action is used for special payloads like "dismiss" to close notifications on other devices
 	Action string `json:"action,omitempty"`
+}
+
+type declarativeNotification struct {
+	Title    string                       `json:"title"`
+	Body     string                       `json:"body,omitempty"`
+	Navigate string                       `json:"navigate"`
+	Tag      string                       `json:"tag,omitempty"`
+	Icon     string                       `json:"icon,omitempty"`
+	Badge    string                       `json:"badge,omitempty"`
+	AppBadge string                       `json:"app_badge,omitempty"`
+	Data     *declarativeNotificationData `json:"data,omitempty"`
+}
+
+type declarativeNotificationData struct {
+	NotificationID string `json:"notificationId,omitempty"`
+	URL            string `json:"url,omitempty"`
+}
+
+func (p Payload) MarshalJSON() ([]byte, error) {
+	type payloadJSON struct {
+		Title          string                   `json:"title,omitempty"`
+		Body           string                   `json:"body,omitempty"`
+		Icon           string                   `json:"icon,omitempty"`
+		Badge          string                   `json:"badge,omitempty"`
+		Tag            string                   `json:"tag,omitempty"`
+		NotificationID string                   `json:"notificationId,omitempty"`
+		URL            string                   `json:"url,omitempty"`
+		Action         string                   `json:"action,omitempty"`
+		WebPush        int                      `json:"web_push,omitempty"`
+		Mutable        bool                     `json:"mutable,omitempty"`
+		Notification   *declarativeNotification `json:"notification,omitempty"`
+	}
+
+	out := payloadJSON{
+		Title:          p.Title,
+		Body:           p.Body,
+		Icon:           p.Icon,
+		Badge:          p.Badge,
+		Tag:            p.Tag,
+		NotificationID: p.NotificationID,
+		URL:            p.URL,
+		Action:         p.Action,
+	}
+	if p.declarativeNotificationEligible() {
+		out.WebPush = declarativeWebPushValue
+		out.Mutable = true
+		out.Notification = &declarativeNotification{
+			Title:    p.Title,
+			Body:     p.Body,
+			Navigate: p.URL,
+			Tag:      p.Tag,
+			Icon:     p.Icon,
+			Badge:    p.Badge,
+			AppBadge: p.AppBadge,
+			Data: &declarativeNotificationData{
+				NotificationID: p.NotificationID,
+				URL:            p.URL,
+			},
+		}
+	}
+	return json.Marshal(out)
+}
+
+func (p Payload) declarativeNotificationEligible() bool {
+	return p.Action == "" && p.Title != "" && p.URL != ""
 }
 
 // PayloadContext provides optional context for building push payloads.

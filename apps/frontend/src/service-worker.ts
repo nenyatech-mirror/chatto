@@ -151,6 +151,44 @@ interface PushPayload {
   action?: 'dismiss';
 }
 
+interface DeclarativePushPayload extends PushPayload {
+  web_push?: number;
+  mutable?: boolean;
+  notification?: DeclarativeNotificationPayload;
+}
+
+interface DeclarativeNotificationPayload {
+  title?: string;
+  body?: string;
+  icon?: string;
+  badge?: string;
+  app_badge?: string | number;
+  tag?: string;
+  navigate?: string;
+  data?: {
+    notificationId?: string;
+    url?: string;
+  };
+}
+
+type NormalizedPushNotification = {
+  title: string;
+  options: NotificationOptions;
+  appBadgeCount: number | null;
+};
+
+type DeclarativePushEventNotification = Pick<
+  Notification,
+  'title' | 'body' | 'icon' | 'tag' | 'data'
+> & {
+  badge?: string;
+  app_badge?: string | number;
+};
+
+type PushEventWithDeclarativeNotification = PushEvent & {
+  notification?: DeclarativePushEventNotification | null;
+};
+
 function handleBadgeStateMessage(event: ExtendableMessageEvent): boolean {
   const message = event.data as Record<string, unknown> | undefined;
   if (!message || message.type !== 'chatto-badge-state') return false;
@@ -164,21 +202,84 @@ function handleBadgeStateMessage(event: ExtendableMessageEvent): boolean {
   return true;
 }
 
+function normalizePushNotification(payload: DeclarativePushPayload): NormalizedPushNotification {
+  const notification = payload.notification;
+  const notificationId = payload.notificationId ?? notification?.data?.notificationId;
+  const url = payload.url ?? notification?.data?.url ?? notification?.navigate;
+
+  return {
+    title: payload.title ?? notification?.title ?? 'New notification',
+    options: {
+      body: payload.body ?? notification?.body,
+      icon: payload.icon ?? notification?.icon ?? '/icons/icon-192.png',
+      badge: payload.badge ?? notification?.badge ?? '/icons/icon-192.png',
+      tag: payload.tag ?? notification?.tag,
+      data: {
+        notificationId,
+        url
+      }
+    },
+    appBadgeCount: declarativeAppBadgeCount(notification?.app_badge)
+  };
+}
+
+function declarativePayloadFromEventNotification(
+  notification: DeclarativePushEventNotification
+): DeclarativePushPayload {
+  return {
+    notification: {
+      title: notification.title,
+      body: notification.body,
+      icon: notification.icon,
+      badge: notification.badge,
+      app_badge: notification.app_badge,
+      tag: notification.tag,
+      data: notificationData(notification.data)
+    }
+  };
+}
+
+function declarativeAppBadgeCount(appBadge: unknown): number | null {
+  if (typeof appBadge === 'number' && Number.isFinite(appBadge)) {
+    return Math.max(0, Math.floor(appBadge));
+  }
+  if (typeof appBadge !== 'string' || appBadge.trim() === '') return null;
+
+  const count = Number(appBadge);
+  return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : null;
+}
+
+function notificationData(data: unknown): DeclarativeNotificationPayload['data'] {
+  if (typeof data !== 'object' || data === null) return undefined;
+  return {
+    notificationId: stringProperty(data, 'notificationId'),
+    url: stringProperty(data, 'url')
+  };
+}
+
+function stringProperty(record: object, key: string): string | undefined {
+  const value = (record as Record<string, unknown>)[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
 /**
  * Handle incoming push events.
  * Parse the payload and display a native notification, or dismiss existing ones.
  */
 self.addEventListener('push', (event) => {
-  if (!event.data) {
-    console.warn('Push event received with no data');
-    return;
-  }
-
-  let payload: PushPayload;
-  try {
-    payload = event.data.json() as PushPayload;
-  } catch {
-    console.error('Failed to parse push payload');
+  const declarativeNotification = (event as PushEventWithDeclarativeNotification).notification;
+  let payload: DeclarativePushPayload;
+  if (event.data) {
+    try {
+      payload = event.data.json() as DeclarativePushPayload;
+    } catch {
+      console.error('Failed to parse push payload');
+      return;
+    }
+  } else if (declarativeNotification) {
+    payload = declarativePayloadFromEventNotification(declarativeNotification);
+  } else {
+    console.warn('Push event received with no data or declarative notification');
     return;
   }
 
@@ -195,24 +296,14 @@ self.addEventListener('push', (event) => {
   }
 
   badgeCoordinator.recordRegularPush();
-
-  // Regular notification display
-  const options: NotificationOptions = {
-    body: payload.body,
-    icon: payload.icon ?? '/icons/icon-192.png',
-    badge: payload.badge ?? '/icons/icon-192.png',
-    tag: payload.tag,
-    // Pass notificationId and url in data for the click handler
-    data: {
-      notificationId: payload.notificationId,
-      url: payload.url
-    }
-  };
+  const notification = normalizePushNotification(payload);
 
   event.waitUntil(
     Promise.all([
-      self.registration.showNotification(payload.title ?? 'New notification', options),
-      badgeCoordinator.setProvisionalPushFlagBadge()
+      self.registration.showNotification(notification.title, notification.options),
+      notification.appBadgeCount !== null
+        ? badgeCoordinator.setPushAppBadgeCount(notification.appBadgeCount)
+        : badgeCoordinator.setProvisionalPushFlagBadge()
     ])
   );
 });
