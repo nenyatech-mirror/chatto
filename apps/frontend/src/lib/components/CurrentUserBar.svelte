@@ -24,7 +24,7 @@ to the user settings page for the active server.
     setRoomSidebarPanel
   } from '$lib/storage/roomSidebarPanel';
   import { serverStorageKey } from '$lib/storage/serverStorage';
-  import { isTouchDevice } from '$lib/utils/isTouchDevice';
+  import { prefersTouchActions, supportsHoverActions } from '$lib/utils/inputCapabilities';
   import BottomSheet from '$lib/ui/BottomSheet.svelte';
   import ContextMenu from '$lib/ui/ContextMenu.svelte';
   import Dialog from '$lib/ui/Dialog.svelte';
@@ -75,7 +75,7 @@ to the user settings page for the active server.
   const compactCallButtonClass = 'btn-secondary h-10 w-10 shrink-0 !px-0 !py-0 text-xs';
   const compactCallActiveButtonClass = 'btn-success h-10 w-10 shrink-0 !px-0 !py-0 text-xs';
   const compactCallDangerButtonClass = 'btn-danger h-10 w-10 shrink-0 !px-0 !py-0 text-xs';
-  const isTouch = isTouchDevice();
+  const useSheetDialog = prefersTouchActions() && !supportsHoverActions();
   const presenceModes: PresenceMode[] = ['auto', 'away', 'doNotDisturb', 'invisible'];
   const currentPresence = $derived.by(() => {
     if (!activeServerUser) return PresenceStatus.Offline;
@@ -393,7 +393,7 @@ to the user settings page for the active server.
 {/if}
 
 {#if activeServerUser}
-  {#if isTouch}
+  {#if useSheetDialog}
     <BottomSheet
       bind:visible={customStatusDialogVisible}
       onclose={() => (customStatusDialogVisible = false)}
