@@ -9,7 +9,11 @@
   import { isMessagePostedEvent, RoomEventKind, roomEventKind } from '$lib/render/eventKinds';
   import { getAuthenticatedServerState } from '$lib/api-client/serverState';
   import { getViewerStateViaConnect } from '$lib/api-client/viewer';
-  import { createRoomDirectoryAPI, RoomDirectoryScope } from '$lib/api-client/roomDirectory';
+  import {
+    createRoomDirectoryAPI,
+    RoomDirectoryScope,
+    RoomKind
+  } from '$lib/api-client/roomDirectory';
   import { notificationTarget } from '$lib/state/server/notifications.svelte';
   import { prepareUiForNotificationTarget } from '$lib/notifications/notificationNavigationUi';
   import { getAppUiState } from '$lib/state/appUi.svelte';
@@ -91,10 +95,10 @@
       return;
     }
     try {
-      const [serverState, viewer, dmRooms] = await Promise.all([
+      const [serverState, viewer, rooms] = await Promise.all([
         getAuthenticatedServerState(connectAPIConfig()),
         getViewerStateViaConnect(connectAPIConfig()),
-        roomDirectoryAPI().listRooms(RoomDirectoryScope.DMS),
+        roomDirectoryAPI().listRooms(RoomDirectoryScope.ALL),
         notificationStore.fetch()
       ]);
 
@@ -106,16 +110,13 @@
 
       const pref = viewer.serverNotificationPreference;
       notificationLevelStore.setServerPreference(pref.level, pref.effectiveLevel);
-      roomUnreadStore.clear();
-      roomUnreadStore.setServerHasUnread(serverState.viewerHasUnreadRooms);
-
-      // Populate DM unread status. Channel and DM rooms now share the same
-      // per-room unread map.
-      for (const room of dmRooms) {
-        if (room.hasUnread) {
-          roomUnreadStore.setRoomUnread(room.id, true);
-        }
-      }
+      const hasUnreadChannel = rooms.some(
+        (room) => room.kind === RoomKind.CHANNEL && room.hasUnread
+      );
+      roomUnreadStore.initRooms(
+        rooms,
+        serverState.viewerHasUnreadRooms && !hasUnreadChannel
+      );
 
       displayName = serverState.name;
       logoUrl = serverState.logoUrl;
@@ -244,8 +245,9 @@
 
     if (!roomId) {
       const rooms = await roomDirectoryAPI().listRooms(RoomDirectoryScope.CHANNELS);
-      roomUnreadStore.initRooms(rooms);
-      roomId = rooms.find((r) => r.hasUnread)?.id ?? null;
+      roomUnreadStore.updateRooms(rooms);
+      roomUnreadStore.resolveUnknownUnread();
+      roomId = roomUnreadStore.getFirstUnreadRoomId();
     }
 
     if (roomId) {
