@@ -105,7 +105,7 @@
     typingMembers?: RoomMember[];
     // Jump to message
     scrollToEventId?: string | null;
-    onScrollToEventComplete?: () => void;
+    onScrollToEventComplete?: (landed: boolean) => void;
     isJumpedMode?: boolean;
     isLoadingNewer?: boolean;
     hasReachedEnd?: boolean;
@@ -124,6 +124,11 @@
   };
 
   let initialScrollDone = $state(false);
+  let presentScrollRequest = $state(0);
+  let presentScrollSequence = 0;
+  let activePresentScrollRequest = 0;
+  let userScrollIntentAt = 0;
+  const USER_SCROLL_INTENT_MS = 250;
 
   // State for smart scroll behavior (when not alwaysScrollToBottom)
   let shouldScrollToBottom = $state(true);
@@ -252,6 +257,9 @@
   $effect(() => {
     void roomId;
 
+    presentScrollSequence += 1;
+    presentScrollRequest = 0;
+    activePresentScrollRequest = 0;
     initialScrollDone = false;
     setShouldScrollToBottom(true);
     lastSeenNewestId = null;
@@ -310,50 +318,63 @@
   });
 
   // Scroll to a specific event by ID (for jump-to-message)
+  let scrollAttemptId = 0;
   $effect(() => {
+    const attemptId = ++scrollAttemptId;
     const targetId = scrollToEventId;
     if (!targetId || !virtualizerHandle || virtualItems.length === 0) return;
-
-    // Find the target event's index in virtualItems
-    const targetIdx = virtualItems.findIndex(
-      (item) => item.type === 'event' && item.event.id === targetId
-    );
-    if (targetIdx === -1) return;
+    const targetEventId = targetId;
 
     // Disable auto-scroll so it doesn't race with the jump scroll.
     setShouldScrollToBottom(false);
     // Mark initial scroll as done so pending initial loading state cannot obscure the jump.
     initialScrollDone = true;
 
-    // Wait for render, then scroll and highlight.
-    // After a cache replacement (jump-to-message), virtua needs multiple frames
-    // to measure items and render the target element. Retry the highlight
-    // a few times to handle this latency.
+    // After a cache replacement, virtua can need several frames before the
+    // target item is indexed, measured, and mounted. Retry the full lookup +
+    // scroll path instead of giving up before the target is renderable.
     tick().then(() => {
-      safeScrollToIndex(targetIdx, { align: 'center' });
-
-      // After the scroll and virtualizer measurement settle, restore
-      // shouldScrollToBottom if we landed at the bottom (e.g., linking to a
-      // recent message, or content doesn't overflow the viewport). Without this,
-      // the "Jump to Present" button appears spuriously because no scroll event
-      // fires when content is shorter than the viewport.
-      setTimeout(() => {
-        if (!virtualizerHandle) return;
-        const dist =
-          virtualizerHandle.getScrollSize() -
-          virtualizerHandle.getScrollOffset() -
-          virtualizerHandle.getViewportSize();
-        if (dist < 50) {
-          setShouldScrollToBottom(true);
-        }
-      }, 200);
-
       let attempts = 0;
-      function tryHighlight() {
+      const maxAttempts = 60;
+      let completed = false;
+
+      function complete(landed: boolean) {
+        if (completed || scrollAttemptId !== attemptId) return;
+        if (!landed) {
+          completed = true;
+          onScrollToEventComplete?.(false);
+          return;
+        }
+
+        // Check after the successful target scroll has settled. Starting this
+        // timer before the virtual row mounts can re-enable bottom scrolling
+        // based on the previous window's offset.
+        setTimeout(() => {
+          if (completed || !virtualizerHandle || scrollAttemptId !== attemptId) return;
+          const dist =
+            virtualizerHandle.getScrollSize() -
+            virtualizerHandle.getScrollOffset() -
+            virtualizerHandle.getViewportSize();
+          if (dist < 50) setShouldScrollToBottom(true);
+          completed = true;
+          onScrollToEventComplete?.(true);
+        }, 200);
+      }
+
+      function tryScrollAndHighlight() {
+        if (scrollAttemptId !== attemptId) return;
+
+        const targetIdx = virtualItems.findIndex(
+          (item) => item.type === 'event' && item.event.id === targetEventId
+        );
+        if (targetIdx !== -1) {
+          safeScrollToIndex(targetIdx, { align: 'center' });
+        }
+
         // Scope to this EventList's scroll container so the thread pane
         // highlights within the thread, not in the main room view.
         const scope = scrollContainer ?? document;
-        const target = scope.querySelector(`[data-event-id="${targetId}"]`);
+        const target = scope.querySelector(eventSelector(targetEventId));
         if (target instanceof HTMLElement) {
           target.classList.add('highlight-flash');
           target.addEventListener(
@@ -361,17 +382,24 @@
             () => target.classList.remove('highlight-flash'),
             { once: true }
           );
-          onScrollToEventComplete?.();
-        } else if (attempts < 15) {
-          attempts++;
-          requestAnimationFrame(tryHighlight);
-        } else {
-          // Give up — element never appeared, still signal completion
-          onScrollToEventComplete?.();
+          complete(true);
+          return;
         }
+
+        if (attempts >= maxAttempts) {
+          complete(false);
+          return;
+        }
+        attempts++;
+        requestAnimationFrame(tryScrollAndHighlight);
       }
-      requestAnimationFrame(tryHighlight);
+
+      requestAnimationFrame(tryScrollAndHighlight);
     });
+
+    return () => {
+      if (scrollAttemptId === attemptId) scrollAttemptId++;
+    };
   });
 
   // Scroll container and virtualizer handle
@@ -455,9 +483,76 @@
   }
 
   function handleJumpToPresentClick() {
+    // The replacement latest window must perform a fresh initial-style bottom
+    // scroll. Virtua otherwise preserves the historical window's offset when
+    // the keyed data is replaced and can leave the user stranded mid-window.
+    setShouldScrollToBottom(true);
+    initialScrollDone = false;
+    scrollUpLock = false;
+    presentScrollRequest = ++presentScrollSequence;
     onReachedBottom?.();
     onJumpToPresent?.();
   }
+
+  // Replacing a historical window with the latest window can leave Virtua at
+  // the old numeric offset while it incrementally measures the replacement
+  // rows. Keep the explicit return-to-present request pinned to the bottom
+  // until measurements are stable across consecutive frames. A new request,
+  // room change, or user scroll intent cancels the previous attempt.
+  $effect(() => {
+    const request = presentScrollRequest;
+    void isJumpedMode;
+    void isLoading;
+    void virtualItems.length;
+    void virtualizerHandle;
+
+    if (request === 0 || request === activePresentScrollRequest) return;
+    if (isJumpedMode || isLoading || virtualItems.length === 0 || !virtualizerHandle) return;
+
+    activePresentScrollRequest = request;
+    const requestedRoomId = roomId;
+    const intentAtStart = userScrollIntentAt;
+
+    void (async () => {
+      let settledFrames = 0;
+      let previousScrollSize: number | null = null;
+      let previousViewportSize: number | null = null;
+      for (let frame = 0; frame < 30 && settledFrames < 6; frame++) {
+        await tick();
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+
+        if (
+          request !== presentScrollRequest ||
+          roomId !== requestedRoomId ||
+          isJumpedMode ||
+          userScrollIntentAt !== intentAtStart ||
+          !scrollContainer ||
+          !virtualizerHandle
+        ) {
+          return;
+        }
+
+        startScrollCorrection();
+        safeScrollToIndex(virtualItems.length - 1, { align: 'end' });
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        scrollFader?.refresh();
+
+        const bottomDistance = distanceFromBottom();
+        const scrollSize = virtualizerHandle.getScrollSize();
+        const viewportSize = virtualizerHandle.getViewportSize();
+        const measurementsUnchanged =
+          scrollSize === previousScrollSize && viewportSize === previousViewportSize;
+        settledFrames =
+          bottomDistance !== null && bottomDistance < 10 && measurementsUnchanged
+            ? settledFrames + 1
+            : 0;
+        previousScrollSize = scrollSize;
+        previousViewportSize = viewportSize;
+      }
+
+      initialScrollDone = true;
+    })();
+  });
 
   // Timer-based flag set by programmatic scrolls (auto-scroll effect, scroll-request
   // effect). During the window, handleVirtuaScroll will self-correct if the virtualizer
@@ -489,11 +584,23 @@
   // so virtua's internal scroll adjustments (re-measurement, $fixScrollJump),
   // composer-resize-driven scrollTop writes, and browser scroll clamping during
   // layout shifts never get misread as the user scrolling up.
-  let userScrollIntentAt = 0;
-  const USER_SCROLL_INTENT_MS = 250;
-
   function markUserScrollIntent() {
     userScrollIntentAt = Date.now();
+  }
+
+  function markKeyboardScrollIntent(event: KeyboardEvent) {
+    const target = event.target;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    ) {
+      return;
+    }
+
+    if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+      markUserScrollIntent();
+    }
   }
 
   function distanceFromBottom(): number | null {
@@ -922,6 +1029,8 @@
   }
 </script>
 
+<svelte:window onkeydown={markKeyboardScrollIntent} />
+
 <div class="relative flex min-h-0 min-w-0 flex-1 flex-col pb-2">
   <!-- Gradient fade overlay at top -->
   <div
@@ -937,6 +1046,7 @@
     data-testid="messages-container"
     onwheel={markUserScrollIntent}
     ontouchmove={markUserScrollIntent}
+    onpointerdown={markUserScrollIntent}
   >
     <div class="mt-auto">
       {#if !isLoading && virtualItems.length === 0}
