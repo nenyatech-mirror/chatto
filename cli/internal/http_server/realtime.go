@@ -1,6 +1,7 @@
 package http_server
 
 import (
+	"compress/flate"
 	"context"
 	"errors"
 	"fmt"
@@ -26,6 +27,7 @@ const (
 	realtimeReadLimitBytes           = 64 << 10
 	realtimeReadBufferBytes          = 256
 	realtimeWriteBufferBytes         = 512
+	realtimeCompressionMinBytes      = 1024
 	realtimeHandshakeTimeout         = 10 * time.Second
 	realtimeWriteTimeout             = 10 * time.Second
 	realtimeHeartbeatIntervalSeconds = uint32(core.MyEventsHeartbeatInterval / time.Second)
@@ -63,6 +65,14 @@ func (s *HTTPServer) setupRealtimeAPI(allowedOrigins []string) {
 		s.metrics.realtimeWebSocketOpened()
 		defer s.metrics.realtimeWebSocketClosed()
 		defer conn.Close()
+		if upgrader.EnableCompression {
+			// Huffman-only DEFLATE preserves negotiated permessage-deflate while
+			// avoiding Lempel-Ziv match searching for the larger frames that pass
+			// the write-compression threshold below.
+			if err := conn.SetCompressionLevel(flate.HuffmanOnly); err != nil {
+				s.logger.Warn("Failed to configure realtime WebSocket compression", "error", err)
+			}
+		}
 
 		s.serveRealtimeWebSocket(req.Context(), conn)
 	})
@@ -103,6 +113,13 @@ func (s *HTTPServer) serveRealtimeWebSocket(parent context.Context, conn *websoc
 		}
 		writeMu.Lock()
 		defer writeMu.Unlock()
+		// Compression setup is disproportionately expensive for the small
+		// invalidation and heartbeat frames that dominate this protocol. Keep
+		// negotiated compression for larger payloads where it can repay the
+		// compressor state.
+		conn.EnableWriteCompression(
+			shouldCompressRealtimeFrame(s.config.Webserver.WebSocketCompressionEnabled(), len(data)),
+		)
 		if err := conn.SetWriteDeadline(time.Now().Add(realtimeWriteTimeout)); err != nil {
 			return err
 		}
@@ -202,6 +219,10 @@ func (s *HTTPServer) serveRealtimeWebSocket(parent context.Context, conn *websoc
 			}
 		}
 	}
+}
+
+func shouldCompressRealtimeFrame(compressionEnabled bool, payloadBytes int) bool {
+	return compressionEnabled && payloadBytes >= realtimeCompressionMinBytes
 }
 
 func readRealtimeClientFrame(conn *websocket.Conn, timeout time.Duration) (*realtimev1.RealtimeClientFrame, error) {
