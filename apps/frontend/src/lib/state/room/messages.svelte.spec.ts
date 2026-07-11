@@ -490,10 +490,7 @@ describe('MessagesStore — room lifecycle ownership', () => {
     });
     await settle();
 
-    expect(store.rootEvents.map((event) => event.id)).toEqual([
-      'authoritative',
-      'linked-realtime'
-    ]);
+    expect(store.rootEvents.map((event) => event.id)).toEqual(['authoritative', 'linked-realtime']);
     expect(store.isInitialLoading).toBe(false);
     store.dispose();
   });
@@ -578,7 +575,7 @@ describe('MessagesStore — room lifecycle ownership', () => {
           events: [threadMessageEvent('present') as never],
           startCursor: 'tl:present',
           endCursor: 'tl:present',
-          hasOlder: true,
+          hasOlder: false,
           hasNewer: false
         }),
       getRoomEventsAround: vi.fn(() => aroundPage)
@@ -589,8 +586,9 @@ describe('MessagesStore — room lifecycle ownership', () => {
 
     const jumpState = new JumpToMessageState();
     const jumping = store.jumpToMessage('historical', jumpState);
-    store.jumpToPresent(jumpState);
+    const returningToPresent = store.jumpToPresent(jumpState);
     await settle();
+    await expect(returningToPresent).resolves.toBe(true);
 
     resolveAround?.({
       events: [threadMessageEvent('historical') as never],
@@ -604,6 +602,51 @@ describe('MessagesStore — room lifecycle ownership', () => {
     expect(store.rootEvents.map((event) => event.id)).toEqual(['present']);
     expect(jumpState.isJumpedMode).toBe(false);
     expect(jumpState.scrollToEventId).toBeNull();
+    store.dispose();
+  });
+
+  it('resolves returning to present only after initial backfill completes', async () => {
+    const fake = new FakeQueryClient();
+    type RoomPage = Awaited<ReturnType<RoomTimelineAPI['getRoomEvents']>>;
+    let resolveOlder: ((page: RoomPage) => void) | undefined;
+    const olderPage = new Promise<RoomPage>((resolve) => {
+      resolveOlder = resolve;
+    });
+    const timeline = fakeTimelineAPI({
+      getRoomEvents: vi
+        .fn()
+        .mockResolvedValueOnce(emptyPage())
+        .mockResolvedValueOnce({
+          events: [threadMessageEvent('present') as never],
+          startCursor: 'tl:present',
+          endCursor: 'tl:present',
+          hasOlder: true,
+          hasNewer: false
+        })
+        .mockImplementationOnce(() => olderPage)
+    });
+    const store = new MessagesStore(fake as unknown as ServerConnection, () => null, timeline);
+    store.setRoom('room-1');
+    await settle();
+
+    let completed = false;
+    const returningToPresent = store.jumpToPresent(new JumpToMessageState()).then((loaded) => {
+      completed = true;
+      return loaded;
+    });
+    await settle();
+    expect(completed).toBe(false);
+
+    resolveOlder?.({
+      events: [threadMessageEvent('older') as never],
+      startCursor: 'tl:older',
+      endCursor: 'tl:older',
+      hasOlder: false,
+      hasNewer: true
+    });
+
+    await expect(returningToPresent).resolves.toBe(true);
+    expect(store.rootEvents.map((event) => event.id)).toEqual(['older', 'present']);
     store.dispose();
   });
 
@@ -1823,7 +1866,9 @@ describe('MessagesStore — room lifecycle ownership', () => {
     await store.loadMore();
     await settle();
 
-    expect(store.rootEvents.map((event) => event.id)).toEqual(currentWindow.map((event) => event.id));
+    expect(store.rootEvents.map((event) => event.id)).toEqual(
+      currentWindow.map((event) => event.id)
+    );
     expect(store.hasReachedStart).toBe(false);
 
     await store.loadMore();
