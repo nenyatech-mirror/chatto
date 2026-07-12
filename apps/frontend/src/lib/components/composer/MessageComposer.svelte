@@ -752,8 +752,10 @@
         if (isRichComposer) {
           handleSubmit(); // Fire-and-forget (async, but keydown must return sync)
         } else {
-          manualRichMode = true;
           editorApi?.insertBlockBreak();
+          // TipTap reports an empty document while inserting the first block break,
+          // so commit manual rich mode after that update has had a chance to clear it.
+          manualRichMode = true;
         }
         return true;
       }
@@ -926,8 +928,10 @@
 
   <!-- Unified input container -->
   <div
+    data-testid="composer-input-surface"
+    data-composer-mode={isRichComposer ? 'rich' : 'simple'}
     class={[
-      'relative flex items-start gap-4 rounded-xl bg-surface py-2 pr-3',
+      'composer-mode-surface flex items-start gap-4 rounded-xl bg-surface py-2 pr-3',
       isEditing ? 'pl-3' : 'pl-2'
     ]}
     class:opacity-50={inputDisabled}
