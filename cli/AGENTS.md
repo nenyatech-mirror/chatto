@@ -64,6 +64,15 @@ authorization, live events, backup/restore, and backend tests.
   update constructors, parsers, tests, architecture docs, and e2e coverage.
 - For mixed records in one stream or KV bucket, encode discriminators in the key
   prefix so reads can filter by subject/prefix without deserializing everything.
+- Projection snapshots are disposable acceleration data, never recovery data.
+  Bind them to the durable EVT incarnation identity in stream metadata as well
+  as the stream name and cutoff sequence; reject missing, corrupt,
+  incompatible, or future snapshots by replaying EVT. Do not use
+  `StreamInfo.Created` as a persisted identity.
+- Snapshot restore codecs must be transactional on error and must account for
+  compatibility state preloaded before projector startup. Privacy-review every
+  persisted field: do not snapshot decrypted bodies, raw PII, credentials,
+  unwrapped keys, or state that would weaken crypto-shredding.
 
 ## Live Events
 

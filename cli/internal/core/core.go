@@ -24,6 +24,7 @@ import (
 	"hmans.de/chatto/internal/kms"
 	"hmans.de/chatto/internal/lease"
 	corev1 "hmans.de/chatto/internal/pb/chatto/core/v1"
+	"hmans.de/chatto/internal/projectionsnapshot"
 )
 
 // ============================================================================
@@ -34,36 +35,37 @@ import (
 // It provides a unified API for spaces, users, rooms, and messages,
 // managing current JetStream resources internally.
 type ChattoCore struct {
-	nc                 *nats.Conn
-	js                 jetstream.JetStream
-	logger             *log.Logger
-	storage            *storage
-	config             config.CoreConfig
-	encryption         *encryptionManager
-	dekResolver        *unwrappedDEKResolver
-	configManager      *ConfigManager
-	roomModel          *RoomModel
-	roomCommands       *RoomCommandModel
-	roomDirectoryReads *RoomDirectoryReadModel
-	messageModel       *MessageModel
-	notificationPrefs  *NotificationPreferencesModel
-	roomTimelineReads  *RoomTimelineReadModel
-	readStateModel     *ReadStateModel
-	threadFollows      *ThreadFollowModel
-	reactionModel      *ReactionModel
-	userModel          *UserModel
-	rbacModel          *RBACModel
-	mentionables       *MentionablesModel
-	myEventsModel      *MyEventsModel
-	presenceModel      *PresenceModel
-	mediaModel         *MediaModel
-	callModel          *CallModel
-	assetModel         *AssetModel
-	models             []modelRegistration
-	s3Client           *S3Client            // Optional S3 client for S3-compatible storage
-	permissionResolver *PermissionResolver  // Hierarchical permission resolver
-	linkPreviewCache   *linkpreview.Cache   // Cache for link preview metadata
-	linkPreviewFetcher *linkpreview.Fetcher // Fetcher for link preview metadata
+	nc                       *nats.Conn
+	js                       jetstream.JetStream
+	logger                   *log.Logger
+	storage                  *storage
+	config                   config.CoreConfig
+	encryption               *encryptionManager
+	dekResolver              *unwrappedDEKResolver
+	configManager            *ConfigManager
+	roomModel                *RoomModel
+	roomCommands             *RoomCommandModel
+	roomDirectoryReads       *RoomDirectoryReadModel
+	messageModel             *MessageModel
+	notificationPrefs        *NotificationPreferencesModel
+	roomTimelineReads        *RoomTimelineReadModel
+	readStateModel           *ReadStateModel
+	threadFollows            *ThreadFollowModel
+	reactionModel            *ReactionModel
+	userModel                *UserModel
+	rbacModel                *RBACModel
+	mentionables             *MentionablesModel
+	myEventsModel            *MyEventsModel
+	presenceModel            *PresenceModel
+	mediaModel               *MediaModel
+	callModel                *CallModel
+	assetModel               *AssetModel
+	models                   []modelRegistration
+	s3Client                 *S3Client            // Optional S3 client for S3-compatible storage
+	permissionResolver       *PermissionResolver  // Hierarchical permission resolver
+	linkPreviewCache         *linkpreview.Cache   // Cache for link preview metadata
+	linkPreviewFetcher       *linkpreview.Fetcher // Fetcher for link preview metadata
+	projectionSnapshotWorker *projectionSnapshotWorker
 
 	// VideoMaxUploadSize is the maximum size for video uploads in bytes.
 	// When set (> 0), video attachments use this limit instead of the asset limit.
@@ -310,6 +312,17 @@ func (c *ChattoCore) Run(ctx context.Context) error {
 	g.Go(func() error { return c.callModel.Run(gctx) })
 	g.Go(func() error { return c.assetModel.Run(gctx) })
 	g.Go(func() error { return c.AssetUploads().RunCleanup(gctx) })
+	if c.projectionSnapshotWorker != nil {
+		g.Go(func() error {
+			err := c.projectionSnapshotWorker.Run(gctx, c.bootDone)
+			if errors.Is(err, context.Canceled) {
+				return err
+			}
+			// Snapshots are disposable acceleration data. The worker logs the
+			// stage-specific failure and must never make core unavailable.
+			return nil
+		})
+	}
 
 	return g.Wait()
 }
@@ -1191,6 +1204,35 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 		}
 	}
 
+	var snapshotRepository *projectionsnapshot.Repository
+	var snapshotStreamIdentity string
+	if cfg.ProjectionSnapshots {
+		var snapshotBlobs projectionsnapshot.BlobStore = natsSnapshotBlobStore{store: storage.serverAssets}
+		if cfg.Assets.StorageBackend == config.StorageBackendS3 && s3Client != nil {
+			snapshotBlobs = s3SnapshotBlobStore{client: s3Client}
+		}
+		snapshotRepository, err = projectionsnapshot.NewRepository(snapshotBlobs, projectionsnapshot.RepositoryOptions{
+			SecretHex:       cfg.SecretKey,
+			ProducerVersion: cfg.Version,
+			Logger:          logger.WithPrefix("core.ProjectionSnapshots"),
+		})
+		if err != nil {
+			logger.Warn("Projection snapshots disabled after initialization failure",
+				"stage", "initialize",
+				"error", err)
+			snapshotRepository = nil
+		} else {
+			snapshotStreamIdentity, err = events.StreamIdentity(storage.serverEvtStream)
+			if err != nil {
+				return nil, fmt.Errorf("read EVT stream identity for projection snapshots: %w", err)
+			}
+			logger.Info("Projection snapshots enabled",
+				"projection", "threads",
+				"compatibility_id", threadSnapshotCompatibilityID,
+				"backend", snapshotRepository.Backend())
+		}
+	}
+
 	// Build the event-sourcing primitives before any aggregate-specific
 	// wiring so projections and services that need them can be passed the
 	// concrete deps at construction. Order: publisher → projections →
@@ -1243,6 +1285,11 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 
 	threads := NewThreadProjection()
 	threadsProjector := newProjector(threads, "threads", "Threads", threads.adminProjectionEstimate)
+	if snapshotRepository != nil {
+		if err := threadsProjector.ConfigureSnapshots("threads", projectionSnapshotSource{repository: snapshotRepository}, snapshotStreamIdentity); err != nil {
+			return nil, fmt.Errorf("configure Thread projection snapshots: %w", err)
+		}
+	}
 
 	reactions := NewReactionProjection()
 	reactionsProjector := newProjector(reactions, "reactions", "Reactions", reactions.adminProjectionEstimate)
@@ -1349,6 +1396,31 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize asset cleanup lease: %w", err)
 	}
+	if snapshotRepository != nil {
+		snapshotLease, snapshotLeaseErr := lease.New(js, storage.memoryCacheKV, lease.Options{
+			Name:   projectionSnapshotLeaseName,
+			Bucket: "MEMORY_CACHE",
+			Logger: logger.WithPrefix("core.ProjectionSnapshotLease"),
+		})
+		if snapshotLeaseErr != nil {
+			logger.Warn("Projection snapshot writer disabled after lease initialization failure",
+				"projection", "threads",
+				"stage", "lease_initialize",
+				"error", snapshotLeaseErr)
+		} else {
+			core.projectionSnapshotWorker = &projectionSnapshotWorker{
+				projector:      threadsProjector,
+				repository:     snapshotRepository,
+				lease:          snapshotLease,
+				projectionKey:  "threads",
+				compatibility:  threadSnapshotCompatibilityID,
+				streamName:     storage.serverEvtStream.CachedInfo().Config.Name,
+				streamIdentity: snapshotStreamIdentity,
+				logger:         logger.WithPrefix("core.ProjectionSnapshotWorker"),
+				done:           make(chan struct{}),
+			}
+		}
+	}
 
 	core.mediaModel = NewMediaModel(core)
 	core.callModel = NewCallModel(eventPublisher, callState, callStateProjector, encMgr.callKeys, nil, callReconcileLease, storage.memoryCacheKV, logger.WithPrefix("core.CallModel"))
@@ -1362,10 +1434,6 @@ func NewChattoCore(ctx context.Context, nc *nats.Conn, cfg config.CoreConfig) (*
 	core.readStateModel = &ReadStateModel{core: core}
 	core.threadFollows = &ThreadFollowModel{core: core}
 	core.reactionModel = &ReactionModel{core: core}
-
-	if err := core.seedLegacyThreadFollowStateFromRuntime(ctx); err != nil {
-		return nil, fmt.Errorf("failed to seed legacy thread follow state: %w", err)
-	}
 
 	if err := core.seedDefaultRBAC(ctx); err != nil {
 		return nil, fmt.Errorf("failed to seed default RBAC: %w", err)
@@ -1523,28 +1591,51 @@ func newStorage(js jetstream.JetStream, ctx context.Context, cfg config.CoreConf
 	// Subjects are evt.{aggregateType}.{aggregateId}.{eventType}; live.evt.> is
 	// the republish target so projections and live subscribers consume
 	// from a single NATS Core path.
+	evtMetadata, err := prepareEVTStreamMetadata(ctx, js)
+	if err != nil {
+		return nil, fmt.Errorf("prepare EVT stream metadata: %w", err)
+	}
+	evtConfig := jetstream.StreamConfig{
+		Name:        "EVT",
+		Description: "Event-sourcing log (ADR-033)",
+		Subjects:    []string{"evt.>"},
+		Storage:     jetstream.FileStorage,
+		Compression: jetstream.S2Compression,
+		Replicas:    cfg.Replicas,
+		Metadata:    evtMetadata,
+		// AllowAtomicPublish gates the Nats-Batch-Id / Nats-Batch-Commit
+		// protocol on this stream. Used by Publisher.AppendBatch to
+		// land multi-aggregate cascades (MoveRoomToGroup, DM creation)
+		// adjacently in stream order so projections never observe an
+		// intermediate state that breaks an invariant.
+		AllowAtomicPublish: true,
+		RePublish: &jetstream.RePublish{
+			Source:      "evt.>",
+			Destination: "live.evt.>",
+		},
+	}
 	serverEvtStream, err := createJetStreamResourceWithRetry(ctx, func(ctx context.Context) (jetstream.Stream, error) {
-		return js.CreateOrUpdateStream(ctx, jetstream.StreamConfig{
-			Name:        "EVT",
-			Description: "Event-sourcing log (ADR-033)",
-			Subjects:    []string{"evt.>"},
-			Storage:     jetstream.FileStorage,
-			Compression: jetstream.S2Compression,
-			Replicas:    cfg.Replicas,
-			// AllowAtomicPublish gates the Nats-Batch-Id / Nats-Batch-Commit
-			// protocol on this stream. Used by Publisher.AppendBatch to
-			// land multi-aggregate cascades (MoveRoomToGroup, DM creation)
-			// adjacently in stream order so projections never observe an
-			// intermediate state that breaks an invariant.
-			AllowAtomicPublish: true,
-			RePublish: &jetstream.RePublish{
-				Source:      "evt.>",
-				Destination: "live.evt.>",
-			},
-		})
+		return js.CreateOrUpdateStream(ctx, evtConfig)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create EVT stream: %w", err)
+	}
+	if !events.ValidStreamIdentity(evtConfig.Metadata[events.EVTStreamIdentityMetadataKey]) {
+		info := serverEvtStream.CachedInfo()
+		if info == nil {
+			return nil, fmt.Errorf("created EVT stream info is unavailable")
+		}
+		identity, identityErr := events.NewStreamIdentity(info.Created)
+		if identityErr != nil {
+			return nil, identityErr
+		}
+		evtConfig.Metadata[events.EVTStreamIdentityMetadataKey] = identity
+		serverEvtStream, err = createJetStreamResourceWithRetry(ctx, func(ctx context.Context) (jetstream.Stream, error) {
+			return js.CreateOrUpdateStream(ctx, evtConfig)
+		})
+		if err != nil {
+			return nil, fmt.Errorf("persist EVT stream identity: %w", err)
+		}
 	}
 
 	return &storage{
@@ -1555,6 +1646,39 @@ func newStorage(js jetstream.JetStream, ctx context.Context, cfg config.CoreConf
 		memoryCacheKV:   memoryCacheKV,
 		imageCacheStore: imageCacheStore,
 	}, nil
+}
+
+func prepareEVTStreamMetadata(ctx context.Context, js jetstream.JetStream) (map[string]string, error) {
+	metadata := make(map[string]string)
+	stream, err := js.Stream(ctx, "EVT")
+	switch {
+	case err == nil:
+		info, infoErr := stream.Info(ctx)
+		if infoErr != nil {
+			return nil, fmt.Errorf("read existing EVT stream info: %w", infoErr)
+		}
+		for key, value := range info.Config.Metadata {
+			metadata[key] = value
+		}
+	case errors.Is(err, jetstream.ErrStreamNotFound):
+	case err != nil:
+		return nil, fmt.Errorf("open existing EVT stream: %w", err)
+	}
+	if events.ValidStreamIdentity(metadata[events.EVTStreamIdentityMetadataKey]) {
+		return metadata, nil
+	}
+	if stream == nil {
+		return metadata, nil
+	}
+	if stream.CachedInfo() == nil {
+		return nil, fmt.Errorf("existing EVT stream info is unavailable")
+	}
+	identity, err := events.NewStreamIdentity(stream.CachedInfo().Created)
+	if err != nil {
+		return nil, err
+	}
+	metadata[events.EVTStreamIdentityMetadataKey] = identity
+	return metadata, nil
 }
 
 func createJetStreamResourceWithRetry[T any](ctx context.Context, create func(context.Context) (T, error)) (T, error) {
@@ -1592,9 +1716,11 @@ func isTransientJetStreamStoreCreateError(err error) bool {
 		return false
 	}
 	apiErr := provider.APIError()
-	return apiErr != nil &&
-		apiErr.ErrorCode == 10049 &&
-		strings.Contains(apiErr.Description, "error creating store for stream")
+	if apiErr == nil {
+		return false
+	}
+	return (apiErr.ErrorCode == 10049 && strings.Contains(apiErr.Description, "error creating store for stream")) ||
+		(apiErr.ErrorCode == 10058 && strings.Contains(apiErr.Description, "stream name already in use"))
 }
 
 // ============================================================================
